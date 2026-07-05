@@ -9,6 +9,7 @@ from __future__ import annotations
 import typer
 
 from troupe import __version__
+from troupe.commands.init import init
 
 app = typer.Typer(
     name="troupe",
@@ -16,6 +17,8 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+app.command()(init)
 
 
 def _version_callback(value: bool) -> None:

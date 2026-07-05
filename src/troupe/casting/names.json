@@ -1,0 +1,126 @@
+{
+  "theme": "crafts",
+  "comment": "English occupational surnames. Each entry's craft gloss doubles as the charter epigraph; affinities are role ids the name maps to naturally.",
+  "names": [
+    {
+      "name": "Wright",
+      "craft": "A wright is a master builder — the one who decides how the thing goes together before anyone cuts wood.",
+      "affinities": ["lead", "architect"]
+    },
+    {
+      "name": "Mason",
+      "craft": "A mason works in stone: foundations first, load-bearing walls before ornament.",
+      "affinities": ["backend"]
+    },
+    {
+      "name": "Webster",
+      "craft": "A webster is a weaver — of cloth then, of webs now. The surface people actually touch.",
+      "affinities": ["frontend"]
+    },
+    {
+      "name": "Sawyer",
+      "craft": "A sawyer cuts things open for a living. If it splits along a hidden flaw, better now than later.",
+      "affinities": ["tester", "qa"]
+    },
+    {
+      "name": "Ward",
+      "craft": "A ward is a watchman — assumes every knock at the gate is hostile until proven otherwise.",
+      "affinities": ["security"]
+    },
+    {
+      "name": "Piper",
+      "craft": "A piper keeps the pipes flowing. If it ships, it ships through Piper's lines.",
+      "affinities": ["devops", "ci", "platform"]
+    },
+    {
+      "name": "Page",
+      "craft": "A page keeps the written record close at hand. If the page is wrong, the product is wrong.",
+      "affinities": ["docs", "writer"]
+    },
+    {
+      "name": "Shepherd",
+      "craft": "A shepherd watches the flock and notices the one that wandered — long before it bleats.",
+      "affinities": ["monitor", "sre", "observability"]
+    },
+    {
+      "name": "Potter",
+      "craft": "A potter shapes raw material into vessels that hold exactly what they're meant to hold.",
+      "affinities": ["data", "database"]
+    },
+    {
+      "name": "Glover",
+      "craft": "A glover does fine handwork — fit and finish, measured to the hand that will wear it.",
+      "affinities": ["design", "ux"]
+    },
+    {
+      "name": "Fletcher",
+      "craft": "A fletcher makes arrows fly true. Precision is the whole job.",
+      "affinities": ["tester", "qa"]
+    },
+    {
+      "name": "Cooper",
+      "craft": "A cooper builds barrels — containers that hold under pressure and don't leak.",
+      "affinities": ["backend", "api"]
+    },
+    {
+      "name": "Turner",
+      "craft": "A turner works the lathe: same piece, round and round, a little truer every pass.",
+      "affinities": ["backend", "refactoring"]
+    },
+    {
+      "name": "Miller",
+      "craft": "A miller grinds grain into something usable — raw input in, refined output out.",
+      "affinities": ["data", "analytics"]
+    },
+    {
+      "name": "Smith",
+      "craft": "A smith forges whatever the village needs. The original generalist.",
+      "affinities": ["backend", "generalist"]
+    },
+    {
+      "name": "Harper",
+      "craft": "A harper makes the hall feel right. Tone, rhythm, and knowing when not to play.",
+      "affinities": ["frontend", "design"]
+    },
+    {
+      "name": "Tucker",
+      "craft": "A tucker finishes cloth — the last pass that makes rough weave presentable.",
+      "affinities": ["frontend", "polish"]
+    },
+    {
+      "name": "Walker",
+      "craft": "A walker treads new cloth for hours to prove it holds. Endurance testing, literally.",
+      "affinities": ["tester", "performance"]
+    },
+    {
+      "name": "Chandler",
+      "craft": "A chandler makes candles — sheds light where there wasn't any.",
+      "affinities": ["monitor", "observability", "docs"]
+    },
+    {
+      "name": "Porter",
+      "craft": "A porter carries the load from where it is to where it needs to be, reliably.",
+      "affinities": ["devops", "release"]
+    },
+    {
+      "name": "Carter",
+      "craft": "A carter hauls freight between places that need each other — pipelines and payloads.",
+      "affinities": ["data", "integration"]
+    },
+    {
+      "name": "Marshall",
+      "craft": "A marshall keeps order when everyone's moving at once.",
+      "affinities": ["lead", "security", "pm"]
+    },
+    {
+      "name": "Steward",
+      "craft": "A steward runs the estate: priorities, provisions, and who does what by when.",
+      "affinities": ["pm", "lead"]
+    },
+    {
+      "name": "Baker",
+      "craft": "A baker follows the recipe exactly — because everyone eats the result.",
+      "affinities": ["generalist"]
+    }
+  ]
+}
