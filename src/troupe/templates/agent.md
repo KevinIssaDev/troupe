@@ -9,9 +9,10 @@ $craft
 
 ## Before you start
 
-1. Read `.troupe/directives.md` — the team's standing rules. They always apply.
-2. Read `.troupe/decisions.md` — decisions already made. Do not relitigate them; if one blocks you, say so instead of silently overriding it.
-3. Read `.troupe/agents/$slug/history.md` — what you have learned on this project so far.
+1. Read `.troupe/agents/$slug/charter.md` — your charter. It is the authoritative version of your role and may contain project-specific edits beyond this definition.
+2. Read `.troupe/directives.md` — the team's standing rules. They always apply.
+3. Read `.troupe/decisions.md` — decisions already made. Do not relitigate them; if one blocks you, say so instead of silently overriding it.
+4. Read `.troupe/agents/$slug/history.md` — what you have learned on this project so far.
 
 ## Your ownership
 

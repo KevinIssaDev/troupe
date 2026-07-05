@@ -52,8 +52,8 @@ def scaffold(root: Path, roles: list[str] | None = None) -> ScaffoldResult:
     result = ScaffoldResult(root=root)
     now = datetime.now(UTC).isoformat(timespec="seconds")
 
-    state = _load_state(troupe_dir)
-    existing = _members_from_state(state)
+    state = load_state(troupe_dir)
+    existing = members_from_state(state)
     result.cast_existing = existing
 
     missing_roles = _missing_roles(requested, [m.role for m in existing])
@@ -116,7 +116,7 @@ def _state_path(troupe_dir: Path) -> Path:
     return troupe_dir / "casting-state.json"
 
 
-def _load_state(troupe_dir: Path) -> dict:
+def load_state(troupe_dir: Path) -> dict:
     path = _state_path(troupe_dir)
     if path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
@@ -129,7 +129,7 @@ def _save_state(troupe_dir: Path, state: dict) -> None:
     path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
-def _members_from_state(state: dict) -> list[CastMember]:
+def members_from_state(state: dict) -> list[CastMember]:
     members = []
     for slug, record in state["assignments"].items():
         if record.get("status") != "active":

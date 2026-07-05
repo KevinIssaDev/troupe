@@ -9,7 +9,9 @@ from __future__ import annotations
 import typer
 
 from troupe import __version__
+from troupe.commands.doctor import doctor
 from troupe.commands.init import init
+from troupe.commands.upgrade import upgrade
 
 app = typer.Typer(
     name="troupe",
@@ -19,6 +21,8 @@ app = typer.Typer(
 )
 
 app.command()(init)
+app.command()(doctor)
+app.command()(upgrade)
 
 
 def _version_callback(value: bool) -> None:
