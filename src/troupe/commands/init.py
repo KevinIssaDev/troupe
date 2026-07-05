@@ -56,6 +56,9 @@ def init(
         typer.echo(f"Already on the roster: {names}")
 
     typer.echo(f"Created {len(result.created)} file(s), left {len(result.skipped)} untouched.")
+    if result.updated:
+        for path in result.updated:
+            typer.echo(f"Updated {path.relative_to(result.root)} (troupe hooks wired in).")
     troupe_dir = result.root / ".troupe"
     typer.echo(f"Team state: {troupe_dir}")
     typer.echo("Next: commit .troupe/ and .claude/ so the team travels with the repo.")

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "comment": "Troupe governance policy. protectedPaths are fnmatch patterns, matched case-insensitively against paths relative to the project root ('*' crosses directory separators). The file guard hook blocks agent writes to matching paths.",
+  "protectedPaths": [
+    ".troupe/casting-state.json",
+    ".troupe/config.json",
+    ".troupe/policy.json",
+    ".troupe/agents/*/charter.md",
+    ".claude/settings.json",
+    ".claude/hooks/*",
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*id_rsa*"
+  ]
+}

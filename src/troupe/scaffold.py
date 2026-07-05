@@ -24,6 +24,7 @@ from troupe.charters.compiler import (
     render_charter,
     render_history,
 )
+from troupe.governance.wiring import HOOK_SCRIPTS, merge_hooks_into_settings
 
 DEFAULT_ROLES = ("lead", "backend", "frontend", "tester")
 STATE_VERSION = 1
@@ -33,6 +34,7 @@ STATE_VERSION = 1
 class ScaffoldResult:
     root: Path
     created: list[Path] = field(default_factory=list)
+    updated: list[Path] = field(default_factory=list)
     skipped: list[Path] = field(default_factory=list)
     cast_added: list[CastMember] = field(default_factory=list)
     cast_existing: list[CastMember] = field(default_factory=list)
@@ -91,6 +93,15 @@ def scaffold(root: Path, roles: list[str] | None = None) -> ScaffoldResult:
     )
 
     _sync_team_md(troupe_dir / "team.md", result)
+
+    _write_if_missing(troupe_dir / "policy.json", _shared_template("policy.json"), result)
+    for script in HOOK_SCRIPTS:
+        _write_if_missing(
+            root / ".claude" / "hooks" / script,
+            files("troupe.templates").joinpath(f"hooks/{script}").read_text(encoding="utf-8"),
+            result,
+        )
+    _wire_settings(root / ".claude" / "settings.json", result)
 
     if new_members:
         _save_state(troupe_dir, state)
@@ -172,6 +183,22 @@ def _cast_table(cast: list[CastMember]) -> str:
             f"| {member.name} | {role.title} | `.troupe/agents/{member.slug}/charter.md` | active |"
         )
     return "\n".join(lines)
+
+
+def _wire_settings(path: Path, result: ScaffoldResult) -> None:
+    """Create .claude/settings.json, or merge troupe hook wiring into an
+    existing one — preserving everything the user already has in it."""
+    settings: dict = {}
+    existed = path.exists()
+    if existed:
+        settings = json.loads(path.read_text(encoding="utf-8"))
+    changed = merge_hooks_into_settings(settings)
+    if not changed:
+        result.skipped.append(path)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8", newline="\n")
+    (result.updated if existed else result.created).append(path)
 
 
 def _sync_team_md(path: Path, result: ScaffoldResult) -> None:
