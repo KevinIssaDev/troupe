@@ -11,7 +11,16 @@ from __future__ import annotations
 import json
 import os
 
-HOOK_SCRIPTS = ("troupe_file_guard.py", "troupe_decision_log.py")
+HOOK_SCRIPTS = (
+    "troupe_file_guard.py",
+    "troupe_pii_scrub.py",
+    "troupe_decision_log.py",
+    "troupe_review_gate.py",
+    "troupe_idle_nudge.py",
+    "troupe_session_context.py",
+)
+
+_WRITE_TOOLS_MATCHER = "Write|Edit|NotebookEdit"
 
 
 def _interpreter() -> str:
@@ -32,16 +41,33 @@ def _hook_command(script: str) -> dict:
     }
 
 
-def desired_hooks() -> dict[str, dict]:
-    """The hook entries `troupe init` wires up, keyed by hook event."""
+def desired_hooks() -> dict[str, list[dict]]:
+    """The hook entries `troupe init` wires up, keyed by hook event.
+
+    One entry per script (rather than several scripts per entry) so users can
+    remove or reorder any single governance concern independently.
+    """
     return {
-        "PreToolUse": {
-            "matcher": "Write|Edit|NotebookEdit",
-            "hooks": [_hook_command("troupe_file_guard.py")],
-        },
-        "TaskCompleted": {
-            "hooks": [_hook_command("troupe_decision_log.py")],
-        },
+        "PreToolUse": [
+            {
+                "matcher": _WRITE_TOOLS_MATCHER,
+                "hooks": [_hook_command("troupe_file_guard.py")],
+            },
+            {
+                "matcher": _WRITE_TOOLS_MATCHER,
+                "hooks": [_hook_command("troupe_pii_scrub.py")],
+            },
+        ],
+        "TaskCompleted": [
+            {"hooks": [_hook_command("troupe_decision_log.py")]},
+            {"hooks": [_hook_command("troupe_review_gate.py")]},
+        ],
+        "TeammateIdle": [
+            {"hooks": [_hook_command("troupe_idle_nudge.py")]},
+        ],
+        "SessionStart": [
+            {"hooks": [_hook_command("troupe_session_context.py")]},
+        ],
     }
 
 
@@ -55,10 +81,11 @@ def merge_hooks_into_settings(settings: dict) -> bool:
     """
     changed = False
     hooks = settings.setdefault("hooks", {})
-    for event, entry in desired_hooks().items():
+    for event, desired_entries in desired_hooks().items():
         entries = hooks.setdefault(event, [])
-        script_name = entry["hooks"][0]["args"][0].rsplit("/", 1)[-1]
-        if not any(script_name in json.dumps(existing) for existing in entries):
-            entries.append(entry)
-            changed = True
+        for entry in desired_entries:
+            script_name = entry["hooks"][0]["args"][0].rsplit("/", 1)[-1]
+            if not any(script_name in json.dumps(existing) for existing in entries):
+                entries.append(entry)
+                changed = True
     return changed

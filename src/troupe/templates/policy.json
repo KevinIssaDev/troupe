@@ -6,11 +6,25 @@
     ".troupe/config.json",
     ".troupe/policy.json",
     ".troupe/agents/*/charter.md",
+    ".troupe/approvals/*",
+    ".troupe/.runtime/*",
     ".claude/settings.json",
     ".claude/hooks/*",
     ".env",
     ".env.*",
     "*.pem",
     "*id_rsa*"
-  ]
+  ],
+  "piiScrub": {
+    "enabled": true,
+    "allowlist": ["*@example.com", "*@example.org", "noreply@*", "no-reply@*"]
+  },
+  "reviewGate": {
+    "enabled": false,
+    "taskPatterns": ["*"]
+  },
+  "idleNudge": {
+    "enabled": true,
+    "maxNudgesPerAgent": 2
+  }
 }

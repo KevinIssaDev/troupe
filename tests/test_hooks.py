@@ -13,36 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import run_hook, write_payload
 from troupe.scaffold import scaffold
-
-
-@pytest.fixture
-def project(tmp_path: Path) -> Path:
-    scaffold(tmp_path)
-    return tmp_path
-
-
-def run_hook(project_dir: Path, script: str, payload: dict) -> subprocess.CompletedProcess[str]:
-    script_path = project_dir / ".claude" / "hooks" / script
-    env = {**os.environ, "CLAUDE_PROJECT_DIR": str(project_dir)}
-    return subprocess.run(
-        [sys.executable, str(script_path)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=30,
-    )
-
-
-def write_payload(project_dir: Path, rel: str, tool: str = "Write") -> dict:
-    return {
-        "hook_event_name": "PreToolUse",
-        "cwd": str(project_dir),
-        "tool_name": tool,
-        "tool_input": {"file_path": str(project_dir / rel), "content": "x"},
-    }
-
 
 # ── file guard ───────────────────────────────────────────────────────
 
