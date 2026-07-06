@@ -8,6 +8,7 @@
     ".troupe/agents/*/charter.md",
     ".troupe/approvals/*",
     ".troupe/.runtime/*",
+    ".troupe/reeve-stop",
     ".claude/settings.json",
     ".claude/hooks/*",
     ".env",
