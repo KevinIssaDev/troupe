@@ -6,8 +6,9 @@ import json
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
-GhRunner = Callable[[Sequence[str]], "subprocess.CompletedProcess[str]"]
+GhRunner = Callable[[Sequence[str], Path], "subprocess.CompletedProcess[str]"]
 
 
 class PollError(Exception):
@@ -24,13 +25,16 @@ class Issue:
     priority: int = field(default=9, compare=False)
 
 
-def _run_gh(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+def _run_gh(argv: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    # cwd matters: gh resolves the target repository from the working
+    # directory, which must be the watched project, not wherever the
+    # watcher process happens to run.
     return subprocess.run(  # noqa: S603 — list form, no shell
-        list(argv), capture_output=True, text=True, timeout=60, encoding="utf-8"
+        list(argv), capture_output=True, text=True, timeout=60, encoding="utf-8", cwd=str(cwd)
     )
 
 
-def fetch_issues(label: str, limit: int, run: GhRunner = _run_gh) -> list[Issue]:
+def fetch_issues(label: str, limit: int, cwd: Path, run: GhRunner = _run_gh) -> list[Issue]:
     argv = [
         "gh",
         "issue",
@@ -45,7 +49,7 @@ def fetch_issues(label: str, limit: int, run: GhRunner = _run_gh) -> list[Issue]
         "number,title,labels,url,body",
     ]
     try:
-        proc = run(argv)
+        proc = run(argv, cwd)
     except (OSError, subprocess.SubprocessError) as exc:
         raise PollError(f"could not run gh: {exc}") from exc
     if proc.returncode != 0:

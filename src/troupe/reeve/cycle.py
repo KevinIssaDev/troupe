@@ -48,7 +48,7 @@ def run_cycle(
     report = CycleReport(cycle=state.begin_cycle())
 
     try:
-        issues = poller.prioritize(fetch(options.label, options.limit))
+        issues = poller.prioritize(fetch(options.label, options.limit, root))
     except poller.PollError as exc:
         report.ok = False
         report.add(f"poll failed: {exc}")

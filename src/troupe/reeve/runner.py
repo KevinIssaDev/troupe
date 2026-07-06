@@ -14,7 +14,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-ClaudeRunner = Callable[[Sequence[str], str, float], "subprocess.CompletedProcess[str]"]
+ClaudeRunner = Callable[[Sequence[str], str, float, Path], "subprocess.CompletedProcess[str]"]
 
 # Hard wall-clock ceiling per headless run — the last line of defense when
 # --max-turns and --max-budget-usd can't help (e.g. a permission prompt or
@@ -80,8 +80,10 @@ def build_argv(
 
 
 def _run(
-    argv: Sequence[str], stdin_text: str, timeout_seconds: float
+    argv: Sequence[str], stdin_text: str, timeout_seconds: float, cwd: Path
 ) -> subprocess.CompletedProcess[str]:
+    # cwd must be the watched project: claude discovers .claude/, CLAUDE.md,
+    # and the agent's gh calls resolve the repo from the working directory.
     return subprocess.run(  # noqa: S603 — list form, no shell
         list(argv),
         input=stdin_text,
@@ -89,6 +91,7 @@ def _run(
         text=True,
         encoding="utf-8",
         timeout=timeout_seconds,
+        cwd=str(cwd),
     )
 
 
@@ -113,7 +116,7 @@ def run_claude(
         claude_cmd=claude_cmd,
     )
     try:
-        proc = run(argv, work_context, timeout_minutes * 60)
+        proc = run(argv, work_context, timeout_minutes * 60, root)
     except subprocess.TimeoutExpired:
         return RunResult(
             ok=False,

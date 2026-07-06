@@ -55,7 +55,9 @@ def gh_payload() -> str:
 
 
 def test_fetch_and_prioritize_orders_by_urgency_then_age() -> None:
-    issues = fetch_issues("troupe", 20, run=lambda argv: completed(stdout=gh_payload()))
+    issues = fetch_issues(
+        "troupe", 20, Path(), run=lambda argv, cwd: completed(stdout=gh_payload())
+    )
     ordered = [issue.number for issue in prioritize(issues)]
     assert ordered == [3, 2, 5, 7]  # P0, high, unlabeled, p3
 
@@ -63,11 +65,11 @@ def test_fetch_and_prioritize_orders_by_urgency_then_age() -> None:
 def test_fetch_passes_label_and_limit() -> None:
     seen: list[list[str]] = []
 
-    def fake(argv):
+    def fake(argv, cwd):
         seen.append(list(argv))
         return completed(stdout="[]")
 
-    fetch_issues("mylabel", 5, run=fake)
+    fetch_issues("mylabel", 5, Path(), run=fake)
     argv = seen[0]
     assert "--label" in argv and argv[argv.index("--label") + 1] == "mylabel"
     assert "--limit" in argv and argv[argv.index("--limit") + 1] == "5"
@@ -75,7 +77,39 @@ def test_fetch_passes_label_and_limit() -> None:
 
 def test_fetch_raises_on_gh_failure() -> None:
     with pytest.raises(PollError, match="exit 1"):
-        fetch_issues("troupe", 20, run=lambda argv: completed(returncode=1, stderr="auth"))
+        fetch_issues(
+            "troupe", 20, Path(), run=lambda argv, cwd: completed(returncode=1, stderr="auth")
+        )
+
+
+def test_fetch_runs_gh_in_the_watched_project(tmp_path: Path) -> None:
+    seen: list[Path] = []
+
+    def fake(argv, cwd):
+        seen.append(cwd)
+        return completed(stdout="[]")
+
+    fetch_issues("troupe", 5, tmp_path, run=fake)
+    assert seen == [tmp_path]
+
+
+def test_run_claude_runs_in_project_root(tmp_path: Path) -> None:
+    seen: list[Path] = []
+
+    def fake(argv, stdin_text, timeout, cwd):
+        seen.append(cwd)
+        return completed(stdout=json.dumps({"result": "ok", "total_cost_usd": 0}))
+
+    run_claude(
+        tmp_path,
+        "ctx",
+        execute=True,
+        skip_permissions=False,
+        max_turns=30,
+        max_budget_usd=2.0,
+        run=fake,
+    )
+    assert seen == [tmp_path]
 
 
 # ── state / backoff ──────────────────────────────────────────────────
@@ -195,7 +229,7 @@ def test_run_claude_parses_success_json(tmp_path: Path) -> None:
         skip_permissions=False,
         max_turns=30,
         max_budget_usd=2.0,
-        run=lambda argv, stdin_text, timeout: completed(stdout=payload),
+        run=lambda argv, stdin_text, timeout, cwd: completed(stdout=payload),
     )
     assert result.ok
     assert result.cost_usd == pytest.approx(0.42)
@@ -211,7 +245,7 @@ def test_run_claude_reports_error_payload_and_cost(tmp_path: Path) -> None:
         skip_permissions=False,
         max_turns=30,
         max_budget_usd=2.0,
-        run=lambda argv, stdin_text, timeout: completed(stdout=payload),
+        run=lambda argv, stdin_text, timeout, cwd: completed(stdout=payload),
     )
     assert not result.ok
     assert result.cost_usd == pytest.approx(1.9)  # failed runs still cost money
@@ -225,7 +259,7 @@ def test_run_claude_handles_garbage_output(tmp_path: Path) -> None:
         skip_permissions=False,
         max_turns=30,
         max_budget_usd=2.0,
-        run=lambda argv, stdin_text, timeout: completed(stdout="not json"),
+        run=lambda argv, stdin_text, timeout, cwd: completed(stdout="not json"),
     )
     assert not result.ok
 
@@ -241,12 +275,12 @@ def test_wall_clock_timeout_kills_hung_process() -> None:
     hang = [sys.executable, "-c", "import time; time.sleep(60)"]
     start = time.monotonic()
     with pytest.raises(subprocess.TimeoutExpired):
-        _run(hang, "work context", timeout_seconds=1.5)
+        _run(hang, "work context", timeout_seconds=1.5, cwd=Path())
     assert time.monotonic() - start < 30  # killed promptly, not after 60s
 
 
 def test_run_claude_converts_timeout_to_clean_failure(tmp_path: Path) -> None:
-    def hanging_run(argv, stdin_text, timeout_seconds):
+    def hanging_run(argv, stdin_text, timeout_seconds, cwd):
         raise subprocess.TimeoutExpired(cmd=list(argv), timeout=timeout_seconds)
 
     result = run_claude(
@@ -283,7 +317,7 @@ def test_cycle_threads_timeout_to_runner(project: Path) -> None:
 # ── cycle ────────────────────────────────────────────────────────────
 
 
-def one_issue_fetch(label, limit):
+def one_issue_fetch(label, limit, cwd):
     return [Issue(number=3, title="crash", labels=("P0",), body="b")]
 
 
@@ -364,7 +398,7 @@ def test_failed_run_triggers_backoff_skip_next_cycle(project: Path) -> None:
 
 
 def test_poll_failure_is_reported_not_raised(project: Path) -> None:
-    def broken_fetch(label, limit):
+    def broken_fetch(label, limit, cwd):
         raise PollError("gh not authenticated")
 
     report = run_cycle(project, CycleOptions(), fetch=broken_fetch)
