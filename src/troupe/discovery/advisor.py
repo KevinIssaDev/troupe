@@ -135,12 +135,39 @@ def _wants_devops(profile: ProjectProfile) -> bool:
 # ── rationales (troupe-authored; sanitized tokens interpolate) ───────
 
 
+# Signal kinds that indicate a component itself has backend/service code.
+# Deliberately an allowlist, not "anything but frontend": a bare "manifest"
+# signal exists for every component regardless of ecosystem, so it can't be
+# used to distinguish a real backend component from a frontend-only one.
+_BACKEND_SIGNAL_KINDS = {"cli-entrypoint", "service-framework", "data", "auth-dep"}
+
+
+def _backend_components(profile: ProjectProfile) -> tuple[str, ...]:
+    """`profile.components` filtered to those with their own backend-ish
+    evidence — excludes components whose evidence is purely a manifest and/or
+    frontend markers, so a frontend-only nested app doesn't get cited (or
+    counted) as backend evidence just because monorepo discovery found it."""
+    backend: list[str] = []
+    for component in profile.components:
+        prefix = f"{component}/"
+        if any(
+            s.kind in _BACKEND_SIGNAL_KINDS
+            for s in profile.signals
+            if s.evidence.startswith(prefix)
+        ):
+            backend.append(component)
+    return tuple(backend)
+
+
 def _backend_rationale(profile: ProjectProfile) -> str:
     cli = profile.first_signal("cli-entrypoint")
     service = profile.first_signal("service-framework")
     if profile.kind == "monorepo":
-        names = ", ".join(f"{c}/" for c in profile.components) or "multiple packages"
-        return f"backend/service code across {len(profile.components)} components ({names})"
+        backend_components = _backend_components(profile)
+        if not backend_components:
+            return "backend/service code across the monorepo"
+        names = ", ".join(f"{c}/" for c in backend_components)
+        return f"backend/service code across {len(backend_components)} components ({names})"
     if profile.kind == "cli":
         if cli is not None:
             return f"core CLI logic ({cli.value} entrypoint in {cli.evidence})"

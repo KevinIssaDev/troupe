@@ -380,7 +380,43 @@ def test_domain_organized_monorepo_different_shape_than_howler(tmp_path: Path) -
     assert "data" in ids
     backend = next(p for p in plan.proposals if p.role.id == "backend")
     assert backend.role.title == "Backend"
-    assert f"{len(profile.components)} components" in backend.rationale
+    # apps/admin-ui is Vue-only (frontend-marker/frontend-framework signals
+    # exclusively) — it must not be counted or named as backend evidence,
+    # so the backend count (3) is one less than len(profile.components) (4).
+    assert "3 components" in backend.rationale
+    assert "apps/admin-ui" not in backend.rationale
+    assert "services/commerce/payments" in backend.rationale
+    assert "libs/billing/invoicing" in backend.rationale
+    assert "tools/release-cli" in backend.rationale
+
+
+def test_backend_rationale_excludes_frontend_only_component(tmp_path: Path) -> None:
+    # Regression for a real bug found in review: root has its own backend
+    # manifest, plus one nested component that is frontend-only. Before the
+    # fix, `_backend_rationale`'s monorepo branch cited every entry in
+    # `profile.components` (which excludes the root) as backend evidence —
+    # so it wrongly named the frontend-only nested dir as backend, while
+    # never counting the root's own real backend manifest at all.
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "root-svc"\ndependencies = ["flask"]\n', encoding="utf-8"
+    )
+    (tmp_path / "app.py").write_text("app = None\n", encoding="utf-8")
+
+    ui = tmp_path / "ui"
+    ui.mkdir()
+    (ui / "package.json").write_text(
+        json.dumps({"name": "ui", "dependencies": {"react": "^18.0.0"}}), encoding="utf-8"
+    )
+
+    profile = scan(tmp_path)
+    assert profile.kind == "monorepo"
+    assert profile.components == ("ui",)
+
+    plan = propose_plan(profile)
+    backend = next(p for p in plan.proposals if p.role.id == "backend")
+    assert "ui/" not in backend.rationale
+    assert "1 components" not in backend.rationale
+    assert backend.rationale == "backend/service code across the monorepo"
 
 
 def test_single_nested_project_is_not_monorepo(tmp_path: Path) -> None:
