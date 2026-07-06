@@ -130,6 +130,48 @@ def test_upgrade_is_idempotent(project: Path) -> None:
     assert len(second.unchanged) >= len(first.refreshed)
 
 
+def test_upgrade_rerenders_persisted_charter_specialization(project: Path) -> None:
+    # A member cast by scan-aware init carries a specialized `charter` block in
+    # casting-state.json; upgrade must re-render the agent definition from it,
+    # not silently revert to the catalog role text.
+    state_path = project / ".troupe" / "casting-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["assignments"]["mason"]["charter"] = {
+        "title": "Core",
+        "expertise": "Core CLI logic, Typer command surface, data models, packaging",
+        "ownership": [
+            "Core command logic and the CLI surface: arguments, exit codes, output contracts",
+        ],
+        "use_hint": "core logic, CLI surface, and data-layer work",
+    }
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    agent_def = project / ".claude" / "agents" / "mason.md"
+
+    result = upgrade(project)
+
+    assert agent_def in result.refreshed  # the catalog-rendered def was stale
+    text = agent_def.read_text(encoding="utf-8")
+    assert "description: Mason — Core on this project's troupe" in text
+    assert "You are **Mason**, the Core on this project's troupe" in text
+    assert "- Core command logic and the CLI surface" in text
+    assert "APIs, services, data models, business logic" not in text  # catalog text gone
+
+    # and the specialization survives repeated upgrades
+    second = upgrade(project)
+    assert agent_def in second.unchanged
+
+
+def test_upgrade_without_charter_block_falls_back_to_catalog(project: Path) -> None:
+    agent_def = project / ".claude" / "agents" / "wright.md"
+    agent_def.write_text("# tampered\n", encoding="utf-8")
+
+    upgrade(project)
+
+    text = agent_def.read_text(encoding="utf-8")
+    assert "description: Wright — Lead on this project's troupe" in text
+    assert "You are **Wright**, the Lead on this project's troupe" in text
+
+
 def test_upgrade_errors_outside_troupe_project(tmp_path: Path) -> None:
     result = runner.invoke(app, ["upgrade", str(tmp_path)])
     assert result.exit_code == 1

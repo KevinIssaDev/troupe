@@ -1,7 +1,7 @@
 # Troupe
 
 > The persistent AI cast for this project. Names, charters, and shared memory live in `.troupe/`; compiled agent definitions live in `.claude/agents/`.
-
+$project_section
 ## Cast
 
 $cast_table
