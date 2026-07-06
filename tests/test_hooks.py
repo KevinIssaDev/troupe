@@ -37,6 +37,15 @@ def test_guard_blocks_charters(project: Path) -> None:
     assert proc.returncode == 2
 
 
+def test_guard_blocks_compiled_agent_definitions(project: Path) -> None:
+    proc = run_hook(
+        project,
+        "troupe_file_guard.py",
+        write_payload(project, ".claude/agents/wright.md", tool="Edit"),
+    )
+    assert proc.returncode == 2
+
+
 def test_guard_blocks_env_files_case_insensitively(project: Path) -> None:
     proc = run_hook(project, "troupe_file_guard.py", write_payload(project, ".ENV"))
     assert proc.returncode == 2

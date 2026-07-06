@@ -11,6 +11,7 @@
     ".troupe/reeve-stop",
     ".claude/settings.json",
     ".claude/hooks/*",
+    ".claude/agents/*.md",
     ".env",
     ".env.*",
     "*.pem",
