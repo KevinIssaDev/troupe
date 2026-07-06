@@ -267,6 +267,28 @@ def test_reinit_covered_roster_skips_prompt(tmp_path: Path) -> None:
     assert "Created 0 file(s)" in result.output
 
 
+def test_no_scan_dry_run_writes_nothing(tmp_path: Path) -> None:
+    # Distinct code path from every other --dry-run test: with --no-scan,
+    # `plan` is None, so init() takes the `elif dry_run:` branch and prints
+    # via `_echo_roles_preview` rather than `_echo_proposal` — previously
+    # untested (every other --dry-run test scans by default).
+    result = runner.invoke(app, ["init", str(tmp_path), "--no-scan", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Would cast:" in result.output
+    assert "Dry run: nothing written." in result.output
+    assert wrote_nothing(tmp_path)
+
+
+def test_no_scan_dry_run_with_roles_writes_nothing(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app, ["init", str(tmp_path), "--no-scan", "--dry-run", "--roles", "lead,tester"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Would cast:" in result.output
+    assert "Dry run: nothing written." in result.output
+    assert wrote_nothing(tmp_path)
+
+
 # ── scan-aware casting ───────────────────────────────────────────────
 
 

@@ -82,6 +82,19 @@ def test_fetch_raises_on_gh_failure() -> None:
         )
 
 
+def test_fetch_raises_poll_error_on_gh_timeout() -> None:
+    """gh itself can hang (network stall, auth prompt); subprocess.TimeoutExpired
+    is a subclass of SubprocessError, so it's caught by the existing except
+    clause — pin that explicitly rather than relying on the subclass
+    relationship being exercised only incidentally."""
+
+    def hanging_gh(argv, cwd):
+        raise subprocess.TimeoutExpired(cmd=list(argv), timeout=60)
+
+    with pytest.raises(PollError, match="could not run gh"):
+        fetch_issues("troupe", 20, Path(), run=hanging_gh)
+
+
 def test_fetch_runs_gh_in_the_watched_project(tmp_path: Path) -> None:
     seen: list[Path] = []
 
@@ -264,6 +277,49 @@ def test_run_claude_handles_garbage_output(tmp_path: Path) -> None:
     assert not result.ok
 
 
+def test_run_claude_handles_non_numeric_cost_field_gracefully(tmp_path: Path) -> None:
+    """BUG, found in this test-coverage pass and left for Mason/Wright to fix
+    (not this PR's call per the tester's charter): run_claude's parse step does
+    `float(payload.get("total_cost_usd") or 0.0)` with no exception handling.
+    A syntactically valid JSON payload whose total_cost_usd is non-numeric
+    (schema drift, a truncated/odd claude response) raises an uncaught
+    ValueError instead of degrading to a clean failed RunResult the way
+    test_run_claude_handles_garbage_output already does for fully-invalid
+    JSON. This matters specifically for the budget-ceiling path: an uncaught
+    exception here propagates out through run_cycle (nothing wraps the
+    run_claude call there), so state.save() is never reached — the cost that
+    may have already been spent by the child process is never recorded in the
+    daily-cost ledger, and the cycle counter increment is silently lost.
+    Currently fails with ValueError instead of reaching the assertion."""
+    payload = json.dumps({"result": "done", "total_cost_usd": "not-a-number", "num_turns": 3})
+    result = run_claude(
+        tmp_path,
+        "ctx",
+        execute=True,
+        skip_permissions=False,
+        max_turns=30,
+        max_budget_usd=2.0,
+        run=lambda argv, stdin_text, timeout, cwd: completed(stdout=payload),
+    )
+    assert not result.ok
+
+
+def test_run_claude_handles_non_numeric_turns_field_gracefully(tmp_path: Path) -> None:
+    """Same bug class as test_run_claude_handles_non_numeric_cost_field_gracefully,
+    for `int(payload.get("num_turns") or 0)`."""
+    payload = json.dumps({"result": "done", "total_cost_usd": 0.1, "num_turns": "many"})
+    result = run_claude(
+        tmp_path,
+        "ctx",
+        execute=True,
+        skip_permissions=False,
+        max_turns=30,
+        max_budget_usd=2.0,
+        run=lambda argv, stdin_text, timeout, cwd: completed(stdout=payload),
+    )
+    assert not result.ok
+
+
 def test_wall_clock_timeout_kills_hung_process() -> None:
     """The real _run must kill a process that outlives the wall clock —
     this stub 'claude' sleeps for 60s but is killed within ~2s."""
@@ -420,6 +476,58 @@ def test_failed_run_triggers_backoff_skip_next_cycle(project: Path) -> None:
         project, CycleOptions(execute=True), fetch=one_issue_fetch, run_claude=fail_if_called
     )
     assert any("no eligible issues" in line for line in report2.lines)
+
+
+def test_cycle_records_backoff_on_timeout_shaped_result(project: Path) -> None:
+    """Closes the gap between unit-level "timeout converts to a clean RunResult"
+    (test_run_claude_converts_timeout_to_clean_failure) and the full cycle: a
+    timeout-shaped failure (ok=False, cost_usd=0.0, the wall-clock-timeout
+    error text) must flow through run_cycle exactly like any other failure —
+    cost recorded (0.0, safely), backoff/cooldown applied, and the next cycle
+    skips the issue."""
+
+    def timed_out_run_claude(root, ctx, **kwargs):
+        return RunResult(
+            ok=False,
+            cost_usd=0.0,
+            num_turns=0,
+            text="",
+            error="wall-clock timeout: claude did not finish within 30 minutes and was killed",
+        )
+
+    report = run_cycle(
+        project, CycleOptions(execute=True), fetch=one_issue_fetch, run_claude=timed_out_run_claude
+    )
+    assert not report.ok
+    assert report.cost_usd == pytest.approx(0.0)
+    assert any("wall-clock timeout" in line for line in report.lines)
+
+    verdict = StateStore(project / ".troupe").eligibility(3)
+    assert not verdict.eligible
+    assert "cooling down" in verdict.reason
+
+
+def test_cycle_budget_rounding_at_daily_cap_boundary(project: Path) -> None:
+    """Edge case right at the daily-cap boundary: day_remaining is a tiny
+    positive amount (so the `<= 0` cap check does not stop the cycle) but
+    rounds down to $0.00 once `round(..., 2)` is applied. Documents current
+    behavior — the cycle still executes and threads a literal 0.0
+    max_budget_usd to run_claude; only claude's own --max-budget-usd
+    enforcement protects spend from that point, not Reeve's daily-cap check."""
+    state = StateStore(project / ".troupe")
+    state.record_cost(9.999)  # $0.001 left of the $10 day -> rounds to $0.00
+    state.save()
+    seen: dict = {}
+
+    def fake_run_claude(root, ctx, **kwargs):
+        seen.update(kwargs)
+        return RunResult(ok=True, cost_usd=0.0, num_turns=1, text="")
+
+    report = run_cycle(
+        project, CycleOptions(execute=True), fetch=one_issue_fetch, run_claude=fake_run_claude
+    )
+    assert seen["max_budget_usd"] == pytest.approx(0.0)
+    assert report.executed_issue == 3
 
 
 def test_poll_failure_is_reported_not_raised(project: Path) -> None:
