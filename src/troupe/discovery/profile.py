@@ -23,7 +23,7 @@ MAX_VALUE = 80
 MAX_EVIDENCE = 200
 
 #: The set of values `ProjectProfile.kind` may take.
-KINDS = ("cli", "library", "service", "frontend-app", "mixed", "unknown")
+KINDS = ("cli", "library", "service", "frontend-app", "mixed", "monorepo", "unknown")
 
 #: Fixed framing line that opens every rendered block containing repo-extracted
 #: values. Troupe-authored; extracted text never appears in instruction position.
@@ -67,6 +67,8 @@ class ProjectProfile:
     languages: tuple[str, ...]  # ranked by file count, e.g. ("python",)
     signals: tuple[Signal, ...]  # every detection, with evidence
     notes: str = ""  # reserved for v2 LLM enrichment
+    components: tuple[str, ...] = ()  # non-root component paths, e.g. ("api", "client", "ui")
+    components_truncated: int = 0  # components found past MAX_COMPONENTS, not individually scanned
 
     def signals_of(self, kind: str) -> tuple[Signal, ...]:
         return tuple(s for s in self.signals if s.kind == kind)
@@ -94,6 +96,8 @@ def render_project_context(profile: ProjectProfile) -> str:
     lines.append(f"- Kind: {profile.kind}")
     if profile.languages:
         lines.append(f"- Languages: {', '.join(profile.languages)}")
+    if profile.components:
+        lines.append(f"- Components: {_render_components(profile)}")
     seen: set[tuple[str, str]] = set()
     shown = 0
     for signal in profile.signals:
@@ -116,7 +120,16 @@ def render_project_summary(profile: ProjectProfile) -> str:
         lines.append(f'- Description: "{profile.description}"')
     stack = ", ".join(profile.languages) if profile.languages else "undetected"
     lines.append(f"- Stack: {stack} ({profile.kind})")
+    if profile.components:
+        lines.append(f"- Components: {_render_components(profile)}")
     return "\n".join(lines)
+
+
+def _render_components(profile: ProjectProfile) -> str:
+    rendered = ", ".join(f'"{component}/"' for component in profile.components)
+    if profile.components_truncated:
+        rendered += f", +{profile.components_truncated} more not scanned (cap reached)"
+    return rendered
 
 
 # ── (de)serialization ────────────────────────────────────────────────
@@ -133,6 +146,8 @@ def profile_to_json(profile: ProjectProfile) -> str:
             {"kind": s.kind, "value": s.value, "evidence": s.evidence} for s in profile.signals
         ],
         "notes": profile.notes,
+        "components": list(profile.components),
+        "components_truncated": profile.components_truncated,
     }
     return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
 
@@ -168,4 +183,15 @@ def profile_from_json(text: str) -> ProjectProfile:
         ),
         signals=signals,
         notes=sanitize_extracted(str(data.get("notes", "")), MAX_DESCRIPTION),
+        components=tuple(
+            sanitize_extracted(str(c), MAX_EVIDENCE) for c in data.get("components", [])
+        ),
+        components_truncated=_coerce_int(data.get("components_truncated", 0)),
     )
+
+
+def _coerce_int(value: object) -> int:
+    try:
+        return max(0, int(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0

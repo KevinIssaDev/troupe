@@ -1,13 +1,24 @@
 """Deterministic repository scanner: `scan(root) -> ProjectProfile`.
 
 Pure detection, no policy. Bounded and offline: known paths are checked
-explicitly, plus one sorted directory walk limited to depth 2 from the root
-(skipping vendored/build dirs), capped at 2,000 entries; no file larger than
+explicitly, plus one sorted directory walk limited to depth 5 from the root
+(skipping vendored/build dirs), capped at 3,000 entries; no file larger than
 512 KB is read; no network, no subprocesses. Same tree in, same profile out.
 
+Monorepo-aware (docs/design/monorepo-scan.md): a directory directly
+containing a known manifest filename is a "component root". Every
+per-ecosystem/marker scan runs once per discovered component root (the
+scanned root itself, plus any nested ones), with evidence paths prefixed by
+the component's path relative to the true scan root. Component discovery is
+a zero-extra-filesystem-call, in-memory pass over the walk's own output.
+
 Every string extracted from the repo leaves this module through
-`sanitize_extracted` (via `_signal()` or the final ProjectProfile
-construction) — no consumer can receive raw repo text.
+`sanitize_extracted` (via `_signal()`, the component-evidence prefix step in
+`scan()`, or the final ProjectProfile construction) — no consumer can receive
+raw repo text. `rel`, a component's raw filesystem-relative path, is used
+as-is for actual I/O (`root / rel`, `_scoped_entries`) since it must match
+real on-disk bytes, but is never written into a Signal's evidence without
+passing through `sanitize_extracted` first.
 """
 
 from __future__ import annotations
@@ -17,6 +28,7 @@ import json
 import re
 import tomllib
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 from troupe.discovery.profile import (
@@ -32,9 +44,18 @@ from troupe.discovery.profile import (
 _SKIP_DIRS = frozenset(
     {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", "target", ".tox"}
 )
-_MAX_DEPTH = 2
-_MAX_ENTRIES = 2000
+_MAX_DEPTH = 5
+_MAX_ENTRIES = 3000
 _MAX_FILE_BYTES = 512 * 1024
+
+# Manifest filenames that mark a directory as a component root (monorepo
+# discovery). "requirements*.txt" is handled separately in _has_manifest_at
+# since it's a glob, not an exact name.
+_MANIFEST_NAMES = ("pyproject.toml", "setup.cfg", "package.json", "Cargo.toml", "go.mod")
+
+# Legibility cap (not a cost control — extra components are nearly free to
+# scan, just not free to display). See docs/design/monorepo-scan.md.
+MAX_COMPONENTS = 12
 
 # Extension census -> canonical language tokens.
 _LANGUAGES = {
@@ -112,30 +133,49 @@ def scan(root: Path) -> ProjectProfile:
     """Scan a project tree into a ProjectProfile. Deterministic and offline."""
     root = root.resolve()
     entries = _walk(root)
+    entry_set = set(entries)
+    component_roots, skipped = _discover_components(entry_set)
+
     signals: list[Signal] = []
     name = ""
     description = ""
 
-    for ecosystem_scan in (_scan_python, _scan_node, _scan_rust, _scan_go):
-        found_name, found_description = ecosystem_scan(root, signals)
-        name = name or found_name
-        description = description or found_description
+    for rel in component_roots:
+        component_dir = root if not rel else root / rel
+        component_entries = _scoped_entries(entries, rel)
+        start = len(signals)
 
-    _scan_frontend_markers(root, entries, signals)
-    _scan_tests(root, entries, signals)
-    _scan_ci(root, signals)
-    _scan_infra(root, entries, signals)
-    _scan_data(root, entries, signals)
-    _scan_docs(root, signals)
+        for ecosystem_scan in (_scan_python, _scan_node, _scan_rust, _scan_go):
+            found_name, found_description = ecosystem_scan(component_dir, signals)
+            name = name or found_name
+            description = description or found_description
+        _scan_frontend_markers(component_dir, component_entries, signals)
+        _scan_tests(component_dir, component_entries, signals)
+        _scan_infra(component_dir, component_entries, signals)
+        _scan_data(component_dir, component_entries, signals)
+
+        if rel:  # non-root component: prefix this component's new evidence
+            for i in range(start, len(signals)):
+                prefixed = f"{rel}/{signals[i].evidence}"
+                signals[i] = replace(
+                    signals[i], evidence=sanitize_extracted(prefixed, MAX_EVIDENCE)
+                )
+
+    _scan_ci(root, signals)  # unchanged: root-only, one CI config covers a whole monorepo
+    _scan_docs(root, signals)  # unchanged: root-only, same reasoning
 
     deduped = _dedupe(signals)
-    languages = _language_census(entries)
+    languages = _language_census(entries)  # unchanged: whole-tree, benefits from a deeper walk
+    kind = "monorepo" if len(component_roots) > 1 else _derive_kind(deduped, languages)
+    components = tuple(sanitize_extracted(c, MAX_EVIDENCE) for c in component_roots if c)
     return ProjectProfile(
         name=sanitize_extracted(name or root.name, MAX_NAME),
         description=sanitize_extracted(description, MAX_DESCRIPTION),
-        kind=_derive_kind(deduped, languages),
+        kind=kind,
         languages=languages,
         signals=tuple(deduped),
+        components=components,
+        components_truncated=skipped,
     )
 
 
@@ -143,8 +183,8 @@ def scan(root: Path) -> ProjectProfile:
 
 
 def _walk(root: Path) -> list[str]:
-    """Sorted repo-relative POSIX paths (dirs carry a trailing '/'), depth <= 2,
-    capped at _MAX_ENTRIES."""
+    """Sorted repo-relative POSIX paths (dirs carry a trailing '/'), depth <=
+    _MAX_DEPTH, capped at _MAX_ENTRIES."""
     entries: list[str] = []
 
     def visit(directory: Path, depth: int) -> None:
@@ -167,6 +207,77 @@ def _walk(root: Path) -> list[str]:
 
     visit(root, 1)
     return entries
+
+
+def _has_manifest_at(prefix: str, entry_set: set[str]) -> bool:
+    """True if `prefix` (a component-relative dir, "" for the scan root)
+    directly contains a known manifest filename. No I/O: pure `entry_set`
+    lookups against the walk's already-collected paths."""
+    for name in _MANIFEST_NAMES:
+        candidate = name if not prefix else f"{prefix}/{name}"
+        if candidate in entry_set:
+            return True
+    req_prefix = f"{prefix}/" if prefix else ""
+    for entry in entry_set:
+        if entry.endswith("/") or not entry.startswith(req_prefix):
+            continue
+        remainder = entry[len(req_prefix) :]
+        if (
+            "/" not in remainder
+            and remainder.startswith("requirements")
+            and remainder.endswith(".txt")
+        ):
+            return True
+    return False
+
+
+def _discover_components(entry_set: set[str]) -> tuple[list[str], int]:
+    """Find every directory that is a "component root" — one that directly
+    contains a known manifest filename. Returns (component roots, count
+    skipped past MAX_COMPONENTS).
+
+    "" denotes the scanned root itself. Once a directory qualifies as a
+    component, nothing nested further inside it is considered for a
+    *further* component: a manifest nested inside another component's own
+    directory is far more often vendored/example/fixture content than a
+    legitimate independent sub-package, and treating every nested manifest
+    as its own component would produce phantom components and spurious
+    casting signals more often than it would correctly surface a real
+    nested package (accepted tradeoff, see docs/design/monorepo-scan.md and
+    .troupe/decisions.md — revisit only on real-world evidence otherwise).
+
+    `sorted()` over paths is safe for parent-before-child ordering: a
+    directory's own relative path is always a literal string prefix of its
+    descendants', and a shorter string that is a prefix of a longer one
+    always sorts first lexicographically.
+    """
+    roots: list[str] = []
+    skipped = 0
+    if _has_manifest_at("", entry_set):
+        roots.append("")
+    for entry in sorted(entry_set):
+        if not entry.endswith("/"):
+            continue
+        rel = entry[:-1]
+        if any(rel == r or rel.startswith(r + "/") for r in roots if r):
+            continue  # nested inside an already-claimed component
+        if not _has_manifest_at(rel, entry_set):
+            continue
+        if len(roots) >= MAX_COMPONENTS:
+            skipped += 1
+            continue
+        roots.append(rel)
+    return roots, skipped
+
+
+def _scoped_entries(entries: list[str], rel: str) -> list[str]:
+    """Re-relativize the whole-tree `entries` list under a component prefix
+    so the marker-scan functions receive root-relative paths regardless of
+    whether "root" is the true scan root or a nested component directory."""
+    if not rel:
+        return entries
+    prefix = f"{rel}/"
+    return [entry[len(prefix) :] for entry in entries if entry.startswith(prefix)]
 
 
 def _read_text(path: Path) -> str | None:

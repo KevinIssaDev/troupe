@@ -138,6 +138,9 @@ def _wants_devops(profile: ProjectProfile) -> bool:
 def _backend_rationale(profile: ProjectProfile) -> str:
     cli = profile.first_signal("cli-entrypoint")
     service = profile.first_signal("service-framework")
+    if profile.kind == "monorepo":
+        names = ", ".join(f"{c}/" for c in profile.components) or "multiple packages"
+        return f"backend/service code across {len(profile.components)} components ({names})"
     if profile.kind == "cli":
         if cli is not None:
             return f"core CLI logic ({cli.value} entrypoint in {cli.evidence})"

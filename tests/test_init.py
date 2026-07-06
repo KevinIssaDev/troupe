@@ -302,3 +302,42 @@ def test_scan_aware_init_persists_specialized_charter(tmp_path: Path) -> None:
     charter = (tmp_path / ".troupe/agents/mason/charter.md").read_text(encoding="utf-8")
     assert "## Project context" in charter
     assert '- Project: "sqctl"' in charter
+
+
+def write_howler_shape(root: Path) -> None:
+    """No root manifest; ui/ (React), client/ (Python + tests), api/ (Python)
+    — mirrors tests/test_discovery.py's fixture of the same name."""
+    (root / "ui").mkdir()
+    (root / "ui" / "package.json").write_text(
+        json.dumps({"name": "ui", "dependencies": {"react": "^18.2.0"}}), encoding="utf-8"
+    )
+    (root / "client").mkdir()
+    (root / "client" / "pyproject.toml").write_text(
+        '[project]\nname = "client"\n', encoding="utf-8"
+    )
+    (root / "api").mkdir()
+    (root / "api" / "pyproject.toml").write_text(
+        '[project]\nname = "api"\ndependencies = ["fastapi"]\n', encoding="utf-8"
+    )
+
+
+def test_monorepo_proposal_shows_components_and_skips_core_title(tmp_path: Path) -> None:
+    write_howler_shape(tmp_path)
+    output = run_init(tmp_path, "--yes")
+
+    assert "Core" not in output  # monorepo backend keeps the plain "Backend" title
+
+    team = (tmp_path / ".troupe/team.md").read_text(encoding="utf-8")
+    assert "Components:" in team
+    assert '"api/"' in team and '"client/"' in team and '"ui/"' in team
+    assert "| Mason | Backend |" in team
+
+    state = json.loads((tmp_path / ".troupe/casting-state.json").read_text(encoding="utf-8"))
+    mason = state["assignments"]["mason"]
+    assert mason["role"] == "backend"
+    assert "charter" not in mason or mason["charter"].get("title") != "Core"
+
+    profile = json.loads((tmp_path / ".troupe/profile.json").read_text(encoding="utf-8"))
+    assert profile["kind"] == "monorepo"
+    assert profile["components"] == ["api", "client", "ui"]
+    assert profile["components_truncated"] == 0
