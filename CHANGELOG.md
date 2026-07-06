@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased (0.1.0)
+## 0.1.0 (2026-07-06)
 
-Initial release.
+Initial release. Reeve's execute path was rehearsed live against a sandbox
+repo before this release: one governed cycle fixed a README typo and
+commented its outcome on the issue for $0.55 of a $2.00 budget.
 
 - `troupe init` — casts a persistent, named AI team (craft-surname pool with
   role affinities) into `.troupe/` + `.claude/`; idempotent, never overwrites
