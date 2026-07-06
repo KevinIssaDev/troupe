@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 (2026-07-06)
+
+- Metadata: development-status classifier corrected to `3 - Alpha`,
+  matching the README's stated maturity. No code changes.
+
 ## 0.1.0 (2026-07-06)
 
 Initial release. Reeve's execute path was rehearsed live against a sandbox
