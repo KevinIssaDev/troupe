@@ -82,6 +82,26 @@ def test_upgrade_restores_stale_hooks_and_agent_defs(project: Path) -> None:
     assert agent_def in result.refreshed
 
 
+def test_scaffolded_troupe_explore_command_matches_upgrade_template(project: Path) -> None:
+    """scaffold.py and upgrade.py each independently read
+    `files("troupe.templates").joinpath("commands/troupe-explore.md")` for
+    this file. If a future refactor ever let them diverge (e.g. scaffold.py
+    hardcoding stale content, or reading a different template path), the
+    drift would surface silently — every existing project would show a
+    spurious "refreshed" entry on its very first `troupe upgrade`, and
+    `doctor` has no dedicated check for this file to catch it earlier. Pin
+    that init's own write already matches what upgrade.py considers current,
+    i.e. upgrading a freshly-scaffolded project is a no-op for this file."""
+    command = project / ".claude" / "commands" / "troupe-explore.md"
+    before = command.read_text(encoding="utf-8")
+
+    result = upgrade(project)
+
+    assert command not in result.refreshed
+    assert command in result.unchanged
+    assert command.read_text(encoding="utf-8") == before
+
+
 def test_upgrade_restores_stale_troupe_explore_command(project: Path) -> None:
     command = project / ".claude" / "commands" / "troupe-explore.md"
     original = command.read_text(encoding="utf-8")

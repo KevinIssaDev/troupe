@@ -22,6 +22,8 @@ from troupe.discovery.profile import (
     Signal,
     profile_from_json,
     profile_to_json,
+    render_project_context,
+    render_project_summary,
     sanitize_extracted,
 )
 from troupe.discovery.scanner import scan
@@ -214,6 +216,64 @@ def test_rust_cli_profile(tmp_path: Path) -> None:
     assert Signal("manifest", "rust", "Cargo.toml") in profile.signals
     assert Signal("cli-entrypoint", "cargo-bin", "Cargo.toml") in profile.signals
     assert profile.components == ()
+
+
+def test_malformed_pyproject_toml_still_evidences_python(tmp_path: Path) -> None:
+    # Ratified as designed behavior (see the 2026-07-06 "Scan-aware init
+    # review" decision entry): an unparseable pyproject.toml still evidences
+    # a Python project because _scan_python sets manifest_evidence from the
+    # file's mere presence, before the tomllib.loads() call that can fail.
+    (tmp_path / "pyproject.toml").write_text("this is [ not valid toml", encoding="utf-8")
+    profile = scan(tmp_path)
+    assert profile.kind == "library"
+    assert profile.signals == (Signal("manifest", "python", "pyproject.toml"),)
+
+
+def test_malformed_package_json_yields_no_signals_at_all(tmp_path: Path) -> None:
+    # Asymmetric with test_malformed_pyproject_toml_still_evidences_python
+    # above: _scan_node returns ("", "") on a JSONDecodeError *before* adding
+    # the "manifest" signal, so a syntactically broken package.json makes the
+    # whole node ecosystem invisible to detection — no manifest signal, no
+    # cast implication, profile "unknown" — unlike the Python case, which
+    # stays lenient. Pinning current behavior, not asserting it is correct;
+    # flagged in .troupe/decisions.md as a question for Wright/Mason on
+    # whether ecosystems should behave symmetrically here.
+    (tmp_path / "package.json").write_text("{not valid json,,,", encoding="utf-8")
+    profile = scan(tmp_path)
+    assert profile.signals == ()
+    assert profile.kind == "unknown"
+
+
+def test_malformed_cargo_toml_yields_no_signals_at_all(tmp_path: Path) -> None:
+    # Same asymmetry as package.json above: _scan_rust returns ("", "") on a
+    # TOMLDecodeError before adding its "manifest" signal.
+    (tmp_path / "Cargo.toml").write_text("this is [ not valid toml", encoding="utf-8")
+    profile = scan(tmp_path)
+    assert profile.signals == ()
+    assert profile.kind == "unknown"
+
+
+def test_python_console_script_without_known_cli_framework(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "\n".join(["[project]", 'name = "x"', "", "[project.scripts]", 'x = "x.cli:main"', ""]),
+        encoding="utf-8",
+    )
+    profile = scan(tmp_path)
+    entrypoint = profile.first_signal("cli-entrypoint")
+    assert entrypoint is not None
+    assert entrypoint.value == "console-script"
+
+
+def test_go_echo_framework_detected(tmp_path: Path) -> None:
+    (tmp_path / "go.mod").write_text(
+        "module example.com/acme/api\n\ngo 1.22\n\n"
+        "require (\n\tgithub.com/labstack/echo/v4 v4.11.0\n)\n",
+        encoding="utf-8",
+    )
+    profile = scan(tmp_path)
+    service = profile.first_signal("service-framework")
+    assert service is not None
+    assert service.value == "echo"
 
 
 def test_empty_repo_profile(tmp_path: Path) -> None:
@@ -677,6 +737,49 @@ def test_profile_from_json_resanitizes_hostile_components() -> None:
     assert profile.components_truncated == 3
 
 
+# ── rendering (charter/history/team.md seeding) ──────────────────────
+
+
+def test_render_project_context_caps_at_eight_deduped_signals() -> None:
+    # render_project_context dedupes by (kind, value) and stops at 8 shown —
+    # neither behavior had any coverage; a real profile with a busy stack
+    # (many ecosystems/markers) can easily exceed 8 distinct signals.
+    signals = tuple(Signal(f"kind{i}", f"value{i}", f"evidence{i}") for i in range(10))
+    signals += (Signal("kind0", "value0", "other-evidence"),)  # duplicate (kind, value)
+    profile = ProjectProfile(name="p", description="", kind="mixed", languages=(), signals=signals)
+
+    text = render_project_context(profile)
+
+    shown = [line for line in text.splitlines() if line.startswith("- kind")]
+    assert len(shown) == 8
+    assert shown[0] == '- kind0: "value0" (evidence0)'
+    assert "kind8" not in text and "kind9" not in text  # past the cap, not shown
+
+
+def test_render_project_context_omits_components_line_when_none() -> None:
+    profile = ProjectProfile(name="p", description="", kind="library", languages=(), signals=())
+    assert "Components" not in render_project_context(profile)
+
+
+def test_render_project_summary_shows_truncated_components_count() -> None:
+    profile = ProjectProfile(
+        name="p",
+        description="",
+        kind="monorepo",
+        languages=(),
+        signals=(),
+        components=("api", "ui"),
+        components_truncated=3,
+    )
+    summary = render_project_summary(profile)
+    assert '"api/", "ui/", +3 more not scanned (cap reached)' in summary
+
+
+def test_render_project_summary_no_languages_reads_undetected() -> None:
+    profile = ProjectProfile(name="p", description="", kind="unknown", languages=(), signals=())
+    assert "Stack: undetected (unknown)" in render_project_summary(profile)
+
+
 # ── advisor rules ────────────────────────────────────────────────────
 
 
@@ -822,6 +925,123 @@ def test_requested_roles_bypass_rules_but_specialize() -> None:
     assert all(proposal.rationale == "requested via --roles" for proposal in plan.proposals)
     assert plan.dropped == ()
     assert plan.suggestions == ()
+
+
+# ── rationale generation: branches with no prior coverage ────────────
+
+
+def test_service_kind_backend_rationale_cites_framework() -> None:
+    profile = make_profile(
+        kind="service",
+        languages=("python",),
+        signals=(
+            Signal("manifest", "python", "pyproject.toml"),
+            Signal("service-framework", "fastapi", "pyproject.toml"),
+        ),
+    )
+    backend = next(p for p in propose_plan(profile).proposals if p.role.id == "backend")
+    assert backend.rationale == "service code (fastapi in pyproject.toml)"
+    assert backend.role.title == "Backend"  # no "Core" retitle outside cli/library kinds
+
+
+def test_library_kind_backend_rationale_cites_manifest() -> None:
+    profile = make_profile(
+        kind="library",
+        languages=("python",),
+        signals=(Signal("manifest", "python", "pyproject.toml"),),
+    )
+    backend = next(p for p in propose_plan(profile).proposals if p.role.id == "backend")
+    assert backend.rationale == "core library logic (pyproject.toml)"
+    assert backend.role.title == "Core"
+
+
+def test_cli_kind_backend_rationale_without_entrypoint_signal() -> None:
+    profile = make_profile(
+        kind="cli", languages=("python",), signals=(Signal("manifest", "python", "pyproject.toml"),)
+    )
+    backend = next(p for p in propose_plan(profile).proposals if p.role.id == "backend")
+    assert backend.rationale == "core CLI logic"  # no cli-entrypoint signal to cite
+
+
+def test_tester_rationale_framework_only_no_tests_dir() -> None:
+    profile = make_profile(
+        kind="library",
+        languages=("python",),
+        signals=(
+            Signal("manifest", "python", "pyproject.toml"),
+            Signal("test-framework", "pytest", "pyproject.toml"),
+        ),
+    )
+    tester = next(p for p in propose_plan(profile).proposals if p.role.id == "tester")
+    assert tester.rationale == "pytest configured in pyproject.toml"
+
+
+def test_tester_rationale_tests_dir_only_no_framework() -> None:
+    profile = make_profile(
+        kind="library",
+        languages=("python",),
+        signals=(
+            Signal("manifest", "python", "pyproject.toml"),
+            Signal("tests-dir", "tests", "tests/"),
+        ),
+    )
+    tester = next(p for p in propose_plan(profile).proposals if p.role.id == "tester")
+    assert tester.rationale == "tests in tests/"
+
+
+def test_devops_rationale_multiple_workflows_of_same_system() -> None:
+    profile = make_profile(
+        kind="service",
+        languages=("python",),
+        signals=(
+            Signal("manifest", "python", "pyproject.toml"),
+            Signal("service-framework", "fastapi", "pyproject.toml"),
+            Signal("ci-workflow", "GitHub Actions", ".github/workflows/ci.yml"),
+            Signal("ci-workflow", "GitHub Actions", ".github/workflows/release.yml"),
+        ),
+    )
+    devops = next(p for p in propose_plan(profile).proposals if p.role.id == "devops")
+    assert devops.rationale == "2 GitHub Actions workflows"
+
+
+def test_devops_rationale_infra_only_no_ci() -> None:
+    profile = make_profile(
+        kind="service",
+        languages=("python",),
+        signals=(
+            Signal("manifest", "python", "pyproject.toml"),
+            Signal("service-framework", "fastapi", "pyproject.toml"),
+            Signal("infra", "docker", "Dockerfile"),
+        ),
+    )
+    devops = next(p for p in propose_plan(profile).proposals if p.role.id == "devops")
+    assert devops.rationale == "docker (Dockerfile)"
+
+
+def test_frontend_rationale_falls_back_to_marker_without_framework() -> None:
+    profile = make_profile(
+        kind="frontend-app",
+        languages=("typescript",),
+        signals=(
+            Signal("frontend-marker", "index.html", "index.html"),
+            Signal("frontend-marker", "tsx", "src/App.tsx"),
+        ),
+    )
+    frontend = next(p for p in propose_plan(profile).proposals if p.role.id == "frontend")
+    assert frontend.rationale == "index.html in index.html"
+
+
+def test_core_role_generic_console_script_has_no_framework_name() -> None:
+    profile = make_profile(
+        kind="cli",
+        languages=("python",),
+        signals=(
+            Signal("manifest", "python", "pyproject.toml"),
+            Signal("cli-entrypoint", "console-script", "pyproject.toml"),
+        ),
+    )
+    backend = next(p for p in propose_plan(profile).proposals if p.role.id == "backend")
+    assert backend.role.expertise == "Core CLI logic, command surface, data models, packaging"
 
 
 # ── the injection test (design Security section, non-negotiable) ─────
