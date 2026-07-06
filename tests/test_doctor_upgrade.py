@@ -82,6 +82,17 @@ def test_upgrade_restores_stale_hooks_and_agent_defs(project: Path) -> None:
     assert agent_def in result.refreshed
 
 
+def test_upgrade_restores_stale_troupe_explore_command(project: Path) -> None:
+    command = project / ".claude" / "commands" / "troupe-explore.md"
+    original = command.read_text(encoding="utf-8")
+    command.write_text("# tampered\n", encoding="utf-8")
+
+    result = upgrade(project)
+
+    assert command.read_text(encoding="utf-8") == original
+    assert command in result.refreshed
+
+
 def test_upgrade_adds_missing_policy_knobs_preserving_user_edits(project: Path) -> None:
     policy_path = project / ".troupe" / "policy.json"
     policy = json.loads(policy_path.read_text(encoding="utf-8"))

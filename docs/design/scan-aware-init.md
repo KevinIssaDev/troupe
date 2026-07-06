@@ -91,12 +91,15 @@ the enrichment hook designed but stubbed. Rationale:
 - Determinism keeps init idempotent and testable. Same tree in, same
   profile out, byte-for-byte.
 
-The extension point (v2): a `--enrich` flag on init that runs one bounded
-`claude -p` call (reusing a generalized `runner.run_claude`) to produce a
-prose `description` and `architecture_notes` for the profile, with the
-deterministic profile as fallback when `claude` is absent or fails.
-`ProjectProfile` carries `description` and `notes` fields from day one so
-enrichment slots in without a schema change.
+The extension point once sketched here — a `--enrich` flag running one
+bounded `claude -p` call at init time — is **dropped, not shipped**.
+Superseded by `/troupe-explore` (`docs/design/troupe-explore.md`): a
+user-invoked slash command that fans out to every cast member after
+casting, each reading their own ownership area in the *live* Claude Code
+session and recording findings in their own `history.md`. That shape
+fits deep exploration better than an init-time LLM call — it's
+deliberate rather than automatic, and it naturally splits by cast
+member's ownership instead of producing one generic prose blob.
 
 ### What the scanner inspects
 
@@ -460,12 +463,8 @@ sanitization layer is **not** cuttable.
 
 ### Later (in likely order)
 
-- **v2: LLM enrichment** — `troupe init --enrich`: one bounded `claude -p`
-  call (generalize `reeve/runner.run_claude` out of `reeve/`) producing
-  prose `description`/`notes`; deterministic fallback mandatory; enriched
-  prose passes the same sanitize-and-frame boundary before rendering.
-- `troupe explore` — post-cast parallel exploration writing findings into
-  each member's `history.md` (squad's step 3, as a command).
+- `troupe explore` — landed as a slash command, not an init flag; see
+  `docs/design/troupe-explore.md`.
 - More ecosystems: JVM, .NET, Ruby, PHP; real monorepo/multi-package
   profiles (per-package sub-profiles).
 - `doctor` stack-drift check against `.troupe/profile.json`.
@@ -482,8 +481,8 @@ All six recommendations accepted as stated:
    cli/library kinds).
 4. **Roster cap:** 5, drops listed in the proposal footer.
 5. **`.troupe/profile.json`:** in v1, first cut if the PR balloons.
-6. **LLM pass:** deferred to v2 behind `--enrich`; deterministic-only v1
-   meets the scan-before-draft bar.
+6. **LLM pass:** dropped from the roadmap — `--enrich` is not shipping;
+   superseded by `/troupe-explore` (see `docs/design/troupe-explore.md`).
 
 Review also required the Security section above (prompt-injection surface
 of manifest-derived text) — resolved as neutralize-and-frame, not
