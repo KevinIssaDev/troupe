@@ -196,10 +196,10 @@ only):
   tests to assert it's refreshed to the latest template content (mirrors
   existing hook-script assertions — no new test file needed).
 
-## `troupe init`'s one-line message change
+## `troupe init`'s message change
 
-Per Kevin's spec, this is the **only** change to `init.py` itself — no new
-flags, no scanning changes, otherwise byte-identical.
+Per Kevin's spec, this is the **only** structural change to `init.py`
+itself — no new flags, no scanning changes, otherwise byte-identical.
 
 `src/troupe/commands/init.py`, end of `_echo_result()`:
 
@@ -212,21 +212,22 @@ flags, no scanning changes, otherwise byte-identical.
 # after
     troupe_dir = result.root / ".troupe"
     typer.echo(f"Team state: {troupe_dir}")
-    typer.echo("Next: open Claude Code and run /troupe-explore, or tell the team directly.")
+    typer.echo("Next: commit .troupe/ and .claude/ so the team travels with the repo.")
+    typer.echo("Then: open Claude Code and run /troupe-explore, or tell the team directly.")
 ```
 
-**Signed off by Kevin (2026-07-06): the new line *replaces* the old
-"commit .troupe/..." line rather than adding a second line** — one "Next:"
-line total, matching the exact wording Kevin specified. (Committing the
-roster is still true and covered elsewhere — see the repo's own
-`troupe-repo-rules` guidance that `.troupe/`/`.claude/` are deliberately
-*not* committed to troupe's own repo; the generic scaffold message shouldn't
-be the more prominent of two competing "Next:" lines for other projects
-either.) Suggested test pin: extend whatever existing test asserts on
-`_echo_result` / init stdout (the current "Next: commit..." assertion, if one
-exists in `tests/test_init.py`) to assert the new wording instead; if no such
-assertion currently exists, add one rather than leaving the new line
-unpinned.
+**Corrected 2026-07-06 (post-merge follow-up): the commit-reminder line is
+restored, not replaced.** The initial implementation dropped the
+"commit .troupe/..." line entirely in favor of the explore line, on the
+reasoning that troupe's own dogfooding repo deliberately doesn't commit its
+roster (see `troupe-repo-rules` memory). That reasoning doesn't generalize:
+for every *other* project scaffolded by `troupe init`, committing
+`.troupe/`/`.claude/` is exactly the point — the roster is meant to travel
+with the repo — so dropping that reminder for all users to avoid confusion
+in one dogfooding repo was a real regression. Both lines now print, in
+order: commit first, then explore. Test pin updated in
+`tests/test_init.py::test_init_next_steps_points_to_explore` to assert both
+lines.
 
 ## `docs/design/scan-aware-init.md` cleanup: drop `--enrich`
 

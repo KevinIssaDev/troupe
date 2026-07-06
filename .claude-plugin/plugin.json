@@ -1,7 +1,7 @@
 {
   "name": "troupe",
   "description": "A persistent, governed AI team for Claude Code - named cast, enforced governance hooks, shared decision log, and an autonomous issue watch (Reeve).",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": {
     "name": "Kevin"
   },
