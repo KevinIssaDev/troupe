@@ -1,18 +1,19 @@
-# Cadre — a persistent, governed AI team for Claude Code
+# Troupe — a persistent, governed AI team for Claude Code
 
 **Status:** pre-implementation planning document — **historical.** This is the
-original design brief, kept as-is for the reasoning it records. The project
-shipped under the name **Troupe** (`.cadre/` → `.troupe/`, `cadre` → `troupe`),
-and Ralph (§9) shipped as **Reeve**. As of 0.3.0, milestones M0–M7 below are
-done and several items from "Open decisions" (§11) and "Definition of done"
-(§12) are resolved differently than sketched here — see the per-section notes
-added below, [README.md](README.md) for current behavior, [CHANGELOG.md](CHANGELOG.md)
+original design brief, kept for the reasoning it records, with the project's
+working name updated throughout to **Troupe** (its shipped name) for clarity —
+the brief originally used a placeholder name and proposed `.cadre/`/`cadre` as
+the on-disk convention, superseded by `.troupe/`/`troupe`. Ralph (§9) shipped
+as **Reeve**. As of 0.3.0, milestones M0–M7 below are done and several items
+from "Open decisions" (§11) and "Definition of done" (§12) are resolved
+differently than sketched here — see the per-section notes added below,
+[README.md](README.md) for current behavior, [CHANGELOG.md](CHANGELOG.md)
 for what shipped in which release, and `docs/design/` for the designs of
 what came after v1 (scan-aware init, monorepo-aware scanning,
-`/troupe-explore`). Section headings, the working name, and the original
-reasoning are left untouched below; only the roadmap/decision sections are
-annotated with what actually happened.
-**Working name:** Cadre (placeholder — rename freely; avoid "Squad"/"Team" for trademark/collision reasons)
+`/troupe-explore`). Section headings and the original reasoning are left
+untouched below; only the roadmap/decision sections are annotated with what
+actually happened.
 **Author:** Kevin, with Claude (Anthropic) assisting on design
 **Reference implementation (prior art, MIT licensed, Node/TypeScript):** local clone at `E:\squad` — https://github.com/bradygaster/squad
 
@@ -20,7 +21,7 @@ annotated with what actually happened.
 
 ## 1. What this is
 
-Cadre gives a Claude Code user a **persistent, named AI team that lives in their repo as files** — a roster of specialists (lead, frontend, backend, tester, etc.) with real names, individual charters, a shared architectural decision log, enforced governance rules, and (optionally) an autonomous loop that triages GitHub issues overnight.
+Troupe gives a Claude Code user a **persistent, named AI team that lives in their repo as files** — a roster of specialists (lead, frontend, backend, tester, etc.) with real names, individual charters, a shared architectural decision log, enforced governance rules, and (optionally) an autonomous loop that triages GitHub issues overnight.
 
 It is a Python-native, PyPI-packaged CLI + hook set for **Claude Code**, directly analogous to what `squad` (bradygaster/squad) built for **GitHub Copilot CLI**.
 
@@ -33,7 +34,7 @@ Do not rebuild multi-agent orchestration. Claude Code already ships this nativel
 - Do not try to out-feature Gas Town/Multiclaude on raw orchestration mechanics.
 - Do not port Squad's Node code line-for-line. Squad is prior art for *architecture and conventions*, not a codebase to translate.
 
-**The actual gap Cadre fills** (confirmed not covered by Agent Teams or the other orchestrators as of this writing):
+**The actual gap Troupe fills** (confirmed not covered by Agent Teams or the other orchestrators as of this writing):
 1. A **persistent named roster** that survives across sessions *and* across projects (a thematic casting/naming system), rather than anonymous "teammate-1"-style instances.
 2. A **governance layer with real enforcement** — file-write guards, PII scrubbing, reviewer lockout — implemented as actual Claude Code hooks, not just instructions in a prompt.
 3. A **shared decisions/directives log** (`decisions.md`, `directives.md`) that persists architectural choices and permanent team rules across sessions, distinct from the ephemeral task list Agent Teams already provides.
@@ -64,33 +65,33 @@ Do not assume specifics (minimum model version, exact flag behavior, session-res
 - Claude Code **hooks** (`.claude/settings.json`) as the enforcement substrate — `PreToolUse`, `TaskCreated`, `TaskCompleted`, `TeammateIdle` at minimum.
 - Claude Code **skills** (`~/.claude/skills/` or project-local) for reusable team knowledge, mirroring Squad's `.copilot/skills/`.
 - Optional: project-scoped MCP config (`.mcp.json`) if a task genuinely needs a stateful tool server rather than a file + hook. Default to files + hooks first; only reach for an MCP server if file-based state proves insufficient during implementation.
-- This is an experimental Claude Code feature. Build with a fallback path in mind: if Agent Teams is unavailable/disabled, Cadre should degrade gracefully to plain Claude Code **subagents** (Task tool) for parallel work, even without teammate-to-teammate messaging.
+- This is an experimental Claude Code feature. Build with a fallback path in mind: if Agent Teams is unavailable/disabled, Troupe should degrade gracefully to plain Claude Code **subagents** (Task tool) for parallel work, even without teammate-to-teammate messaging.
 
 ## 5. Tech stack
 
 - **Language:** Python 3.11+
 - **CLI framework:** Typer (preferred) or Click
 - **Packaging:** `pyproject.toml`, PEP 621 metadata, `hatchling` build backend
-- **Dev workflow / zero-install run:** `uv` — `uvx cadre init` should work with no pre-install, same ergonomics as `npx @bradygaster/squad-cli init`
+- **Dev workflow / zero-install run:** `uv` — `uvx troupe init` should work with no pre-install, same ergonomics as `npx @bradygaster/squad-cli init`
 - **Templates:** shipped as package data, extracted via `importlib.resources`
 - **GitHub integration (for Ralph):** `PyGithub`, or shelling out to the `gh` CLI — decide during implementation based on which gives cleaner auth handling
-- **Testing:** `pytest`, plus an end-to-end test that runs `cadre init` into a temp dir and asserts the resulting file tree (mirrors Squad's own `doctor` self-check)
+- **Testing:** `pytest`, plus an end-to-end test that runs `troupe init` into a temp dir and asserts the resulting file tree (mirrors Squad's own `doctor` self-check)
 - **Lint/type-check:** `ruff`, `pyright` (or `mypy`)
 - **CI/CD:** GitHub Actions — lint + type-check + test matrix across ubuntu/macos/windows (Squad's own changelog has multiple Windows-escaping bugs — treat cross-platform as a first-class concern, not an afterthought; always use `pathlib` and list-form `subprocess` args, never `shell=True` string concatenation)
 - **Release:** PyPI via **Trusted Publishers** (GitHub Actions OIDC — no long-lived API tokens)
-- **Discoverability inside Claude Code:** a `plugin.json`/manifest at repo root so Cadre is installable through Claude Code's own plugin mechanism, thinly wrapping the same `cadre` CLI commands
+- **Discoverability inside Claude Code:** a `plugin.json`/manifest at repo root so Troupe is installable through Claude Code's own plugin mechanism, thinly wrapping the same `troupe` CLI commands
 
 ## 6. Proposed repo layout (the tool's own source)
 
 ```
-cadre/
+troupe/
 ├── pyproject.toml
 ├── README.md
 ├── LICENSE (MIT, matching Squad's license choice)
-├── src/cadre/
+├── src/troupe/
 │   ├── cli.py                 # Typer app, subcommand registration
 │   ├── commands/
-│   │   ├── init.py            # scaffolds .cadre/ in target repo
+│   │   ├── init.py            # scaffolds .troupe/ in target repo
 │   │   ├── watch.py           # Ralph: the polling/triage loop
 │   │   ├── doctor.py          # health check, mirrors `squad doctor`
 │   │   └── upgrade.py         # refreshes templates without touching state
@@ -113,10 +114,10 @@ cadre/
 └── .github/workflows/ci.yml, release.yml
 ```
 
-## 7. Proposed scaffolded output (what `cadre init` creates in a user's project)
+## 7. Proposed scaffolded output (what `troupe init` creates in a user's project)
 
 ```
-.cadre/
+.troupe/
 ├── team.md            # roster: names, roles
 ├── decisions.md        # append-only architectural decision log
 ├── directives.md       # permanent team rules
@@ -134,12 +135,12 @@ cadre/
 
 ## 8. Governance hooks — mapped to real Claude Code hook events
 
-| Cadre concern | Claude Code hook | Behavior |
+| Troupe concern | Claude Code hook | Behavior |
 |---|---|---|
 | File-write guard | `PreToolUse` on write-capable tools | Exit non-zero / code 2 to block writes to protected paths |
 | PII scrubbing | `PreToolUse` | Scan content about to be written; block or redact |
 | Reviewer lockout | `TaskCompleted` | Exit code 2 to prevent completion until a human-approval marker is present |
-| Decision logging | `TaskCompleted` | Append a structured entry to `.cadre/decisions.md` |
+| Decision logging | `TaskCompleted` | Append a structured entry to `.troupe/decisions.md` |
 | Idle nudge / anti-stall | `TeammateIdle` | Exit code 2 with feedback to keep a teammate working, mirroring Squad's "escalation" ethos |
 
 Verify exact hook payload shapes and exit-code semantics against current docs before implementing — these have changed across Claude Code versions.
@@ -151,16 +152,16 @@ Verify exact hook payload shapes and exit-code semantics against current docs be
 - Invokes Claude Code **headlessly** (`claude -p "<prompt>" --output-format json`) rather than reimplementing an agent loop
 - Tiered escalation/backoff on repeated failures (avoid infinite retry storms against the same issue)
 - Pluggable state backend: start with a simple local state file/SQLite; consider `git-notes` or an orphan branch later if cross-machine durability matters
-- A stop sentinel file (e.g. `.cadre/ralph-stop`) for clean shutdown, mirroring Squad's pattern
+- A stop sentinel file (e.g. `.troupe/ralph-stop`) for clean shutdown, mirroring Squad's pattern
 - Should be runnable standalone as a scheduled task/cron/systemd timer/GitHub Action — do not assume the user is watching a terminal
 
 ## 10. Suggested build order
 
-1. **M0** — repo scaffolding, `pyproject.toml`, CI skeleton, license, empty `cadre --version`
-2. **M1** — `cadre init`: `.cadre/` + `.claude/` directory generation, charter templates, casting/naming
+1. **M0** — repo scaffolding, `pyproject.toml`, CI skeleton, license, empty `troupe --version`
+2. **M1** — `troupe init`: `.troupe/` + `.claude/` directory generation, charter templates, casting/naming
 3. **M2** — governance hooks: file guard + decision logging (the two with clearest, testable behavior)
 4. **M3** — remaining hooks: PII scrub, reviewer lockout, idle nudge
-5. **M4** — `cadre doctor` health check
+5. **M4** — `troupe doctor` health check
 6. **M5** — Ralph: polling loop, headless invocation, one state backend, stop sentinel
 7. **M6** — packaging polish: `uvx` zero-install path, Claude Code plugin manifest, PyPI trusted-publisher release workflow
 8. **M7** — docs (README, quickstart, comparison table vs. Agent Teams/Gas Town/Multiclaude), initial public release
@@ -189,7 +190,7 @@ Verify exact hook payload shapes and exit-code semantics against current docs be
 
 ## 12. Definition of done for v1
 
-- `uvx cadre init` scaffolds a working `.cadre/` + `.claude/settings.json` in under 10 seconds
+- `uvx troupe init` scaffolds a working `.troupe/` + `.claude/settings.json` in under 10 seconds
 - At least one governance hook (file guard) demonstrably blocks a disallowed write in a test
 - `decisions.md` accumulates entries automatically after a completed task, without manual prompting
 - Ralph can run one full poll → context-build → headless-invoke → comment-back cycle against a real test repo
