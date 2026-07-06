@@ -257,6 +257,16 @@ def test_sanitize_whitespace_only() -> None:
     assert sanitize_extracted(" \t \r\n \n ", 80) == ""
 
 
+def test_sanitize_strips_bidi_and_directional_format_chars() -> None:
+    # U+202E RIGHT-TO-LEFT OVERRIDE and friends (Unicode category Cf) can make
+    # rendered text display in a different order than its underlying bytes —
+    # a spoofing vector if left in a charter/history/terminal rendering.
+    # str.isprintable() is False for all of category Cf, so the existing
+    # printable-char filter already strips them; this pins that as intentional.
+    hostile = "safe-name‮evil-reversed‬‏﻿"
+    assert sanitize_extracted(hostile, 80) == "safe-name evil-reversed"
+
+
 # ── profile (de)serialization ────────────────────────────────────────
 
 
