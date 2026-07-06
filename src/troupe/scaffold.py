@@ -147,6 +147,13 @@ def scaffold(
             files("troupe.templates").joinpath(f"hooks/{script}").read_text(encoding="utf-8"),
             result,
         )
+    _write_if_missing(
+        root / ".claude" / "commands" / "troupe-explore.md",
+        files("troupe.templates")
+        .joinpath("commands/troupe-explore.md")
+        .read_text(encoding="utf-8"),
+        result,
+    )
     _wire_settings(root / ".claude" / "settings.json", result)
 
     if plan is not None:

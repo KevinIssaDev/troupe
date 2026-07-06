@@ -2,6 +2,7 @@
 
 Troupe-owned (refreshed to current templates):
   .claude/hooks/*.py           — emitted governance scripts
+  .claude/commands/troupe-explore.md — fan-out exploration command
   .claude/agents/{slug}.md     — compiled agent definitions (customize the
                                  charter, not these; the definition tells the
                                  agent to read its charter first)
@@ -50,6 +51,11 @@ def upgrade(root: Path) -> UpgradeResult:
     for script in HOOK_SCRIPTS:
         desired = files("troupe.templates").joinpath(f"hooks/{script}").read_text(encoding="utf-8")
         _refresh(root / ".claude" / "hooks" / script, desired, result)
+
+    desired_command = (
+        files("troupe.templates").joinpath("commands/troupe-explore.md").read_text(encoding="utf-8")
+    )
+    _refresh(root / ".claude" / "commands" / "troupe-explore.md", desired_command, result)
 
     for member in members_from_state(load_state(troupe_dir)):
         desired = render_agent_definition(member, created_at="")

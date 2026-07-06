@@ -86,8 +86,15 @@ def test_init_creates_expected_tree(tmp_path: Path) -> None:
         ".claude/agents/mason.md",
         ".claude/agents/webster.md",
         ".claude/agents/sawyer.md",
+        ".claude/commands/troupe-explore.md",
     ):
         assert (tmp_path / rel).is_file(), f"missing {rel}"
+
+
+def test_init_next_steps_points_to_explore(tmp_path: Path) -> None:
+    output = run_init(tmp_path, "--no-scan")
+    assert "Next: open Claude Code and run /troupe-explore, or tell the team directly." in output
+    assert "commit .troupe/" not in output
 
 
 def test_agent_definition_has_valid_frontmatter(tmp_path: Path) -> None:
