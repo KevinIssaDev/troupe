@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 (2026-07-06)
+
+- `troupe init`'s scan is now monorepo-aware. Previously it only checked
+  the exact directory it was pointed at for a project manifest, so any
+  repo with projects split into subdirectories (no root-level manifest)
+  scanned as empty. The scanner now discovers project manifests up to
+  4 directories deep, purely by presence of known manifest filenames —
+  no hardcoded directory names — and proposes a roster that reflects
+  every discovered component (e.g. a React frontend nested in `ui/`, a
+  Python API in `api/`, now both correctly detected and cast). New
+  `kind: "monorepo"` classification and a `Components:` line in the
+  scan summary when more than one project is found. Single-project
+  repos are unaffected — output is byte-for-byte identical to 0.2.0.
+
 ## 0.2.0 (2026-07-06)
 
 - `troupe init` now scans the repository (deterministic, offline,
