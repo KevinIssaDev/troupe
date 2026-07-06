@@ -63,6 +63,14 @@ def watch(
     max_cost_per_day: Annotated[
         float, typer.Option("--max-cost-per-day", min=0.01, help="USD cap per day.")
     ] = 10.0,
+    timeout_minutes: Annotated[
+        float,
+        typer.Option(
+            "--timeout-minutes",
+            min=1,
+            help="Hard wall-clock kill for each agent run, on top of turn/budget caps.",
+        ),
+    ] = 30.0,
     reset_backoff: Annotated[
         bool,
         typer.Option("--reset-backoff", help="Clear the per-issue failure ledger, then continue."),
@@ -96,6 +104,7 @@ def watch(
         max_turns=max_turns,
         max_cost_per_cycle=max_cost_per_cycle,
         max_cost_per_day=max_cost_per_day,
+        timeout_minutes=timeout_minutes,
     )
 
     mode = "EXECUTE" if execute else "triage-only"

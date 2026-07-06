@@ -195,7 +195,7 @@ def test_run_claude_parses_success_json(tmp_path: Path) -> None:
         skip_permissions=False,
         max_turns=30,
         max_budget_usd=2.0,
-        run=lambda argv, stdin_text: completed(stdout=payload),
+        run=lambda argv, stdin_text, timeout: completed(stdout=payload),
     )
     assert result.ok
     assert result.cost_usd == pytest.approx(0.42)
@@ -211,7 +211,7 @@ def test_run_claude_reports_error_payload_and_cost(tmp_path: Path) -> None:
         skip_permissions=False,
         max_turns=30,
         max_budget_usd=2.0,
-        run=lambda argv, stdin_text: completed(stdout=payload),
+        run=lambda argv, stdin_text, timeout: completed(stdout=payload),
     )
     assert not result.ok
     assert result.cost_usd == pytest.approx(1.9)  # failed runs still cost money
@@ -225,9 +225,59 @@ def test_run_claude_handles_garbage_output(tmp_path: Path) -> None:
         skip_permissions=False,
         max_turns=30,
         max_budget_usd=2.0,
-        run=lambda argv, stdin_text: completed(stdout="not json"),
+        run=lambda argv, stdin_text, timeout: completed(stdout="not json"),
     )
     assert not result.ok
+
+
+def test_wall_clock_timeout_kills_hung_process() -> None:
+    """The real _run must kill a process that outlives the wall clock —
+    this stub 'claude' sleeps for 60s but is killed within ~2s."""
+    import sys
+    import time
+
+    from troupe.reeve.runner import _run
+
+    hang = [sys.executable, "-c", "import time; time.sleep(60)"]
+    start = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        _run(hang, "work context", timeout_seconds=1.5)
+    assert time.monotonic() - start < 30  # killed promptly, not after 60s
+
+
+def test_run_claude_converts_timeout_to_clean_failure(tmp_path: Path) -> None:
+    def hanging_run(argv, stdin_text, timeout_seconds):
+        raise subprocess.TimeoutExpired(cmd=list(argv), timeout=timeout_seconds)
+
+    result = run_claude(
+        tmp_path,
+        "ctx",
+        execute=True,
+        skip_permissions=False,
+        max_turns=30,
+        max_budget_usd=2.0,
+        timeout_minutes=5,
+        run=hanging_run,
+    )
+    assert not result.ok
+    assert "wall-clock timeout" in result.error
+    assert "5 minutes" in result.error
+
+
+def test_cycle_threads_timeout_to_runner(project: Path) -> None:
+    seen: dict = {}
+
+    def fake_run_claude(root, ctx, **kwargs):
+        seen.update(kwargs)
+        return RunResult(ok=True, cost_usd=0.1, num_turns=1, text="")
+
+    run_cycle(
+        project,
+        CycleOptions(execute=True, timeout_minutes=7.5),
+        fetch=one_issue_fetch,
+        run_claude=fake_run_claude,
+    )
+    assert seen["timeout_minutes"] == pytest.approx(7.5)
 
 
 # ── cycle ────────────────────────────────────────────────────────────

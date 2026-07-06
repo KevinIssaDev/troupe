@@ -19,6 +19,7 @@ class CycleOptions:
     max_turns: int = 30
     max_cost_per_cycle: float = 2.0
     max_cost_per_day: float = 10.0
+    timeout_minutes: float = 30.0
     claude_cmd: str = "claude"
 
 
@@ -97,6 +98,7 @@ def run_cycle(
         skip_permissions=options.skip_permissions,
         max_turns=options.max_turns,
         max_budget_usd=budget,
+        timeout_minutes=options.timeout_minutes,
         claude_cmd=options.claude_cmd,
     )
 

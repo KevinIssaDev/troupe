@@ -14,7 +14,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-ClaudeRunner = Callable[[Sequence[str], str], "subprocess.CompletedProcess[str]"]
+ClaudeRunner = Callable[[Sequence[str], str, float], "subprocess.CompletedProcess[str]"]
+
+# Hard wall-clock ceiling per headless run — the last line of defense when
+# --max-turns and --max-budget-usd can't help (e.g. a permission prompt or
+# network stall leaves the process wedged without consuming turns or budget).
+DEFAULT_TIMEOUT_MINUTES = 30.0
 
 # Execute mode runs at acceptEdits plus this narrow allowlist: enough to
 # inspect the repo/issue and report back, nothing repo-destructive. Wider
@@ -74,14 +79,16 @@ def build_argv(
     return argv
 
 
-def _run(argv: Sequence[str], stdin_text: str) -> subprocess.CompletedProcess[str]:
+def _run(
+    argv: Sequence[str], stdin_text: str, timeout_seconds: float
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 — list form, no shell
         list(argv),
         input=stdin_text,
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=45 * 60,
+        timeout=timeout_seconds,
     )
 
 
@@ -93,6 +100,7 @@ def run_claude(
     skip_permissions: bool,
     max_turns: int,
     max_budget_usd: float,
+    timeout_minutes: float = DEFAULT_TIMEOUT_MINUTES,
     claude_cmd: str = "claude",
     run: ClaudeRunner = _run,
 ) -> RunResult:
@@ -105,7 +113,18 @@ def run_claude(
         claude_cmd=claude_cmd,
     )
     try:
-        proc = run(argv, work_context)
+        proc = run(argv, work_context, timeout_minutes * 60)
+    except subprocess.TimeoutExpired:
+        return RunResult(
+            ok=False,
+            cost_usd=0.0,
+            num_turns=0,
+            text="",
+            error=(
+                f"wall-clock timeout: claude did not finish within "
+                f"{timeout_minutes:g} minutes and was killed"
+            ),
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         return RunResult(ok=False, cost_usd=0.0, num_turns=0, text="", error=f"claude: {exc}")
 
