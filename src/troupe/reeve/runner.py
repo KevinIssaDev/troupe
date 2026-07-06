@@ -100,6 +100,28 @@ def _child_env(environ: Mapping[str, str] = os.environ) -> dict[str, str] | None
     }
 
 
+def _coerce_float(value: object) -> tuple[float, bool]:
+    """Best-effort float coercion for fields lifted from the child's JSON.
+
+    Returns (value, valid) rather than silently defaulting: a non-numeric
+    value in an otherwise-valid payload means the schema drifted or the
+    response was truncated, and the caller should treat the whole result as
+    untrustworthy rather than reporting a fabricated 0.0 cost as success.
+    """
+    try:
+        return float(value), True  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0, False
+
+
+def _coerce_int(value: object) -> tuple[int, bool]:
+    """Best-effort int coercion — see _coerce_float for why (value, valid)."""
+    try:
+        return int(value), True  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0, False
+
+
 def _run(
     argv: Sequence[str], stdin_text: str, timeout_seconds: float, cwd: Path
 ) -> subprocess.CompletedProcess[str]:
@@ -161,9 +183,23 @@ def run_claude(
     except ValueError:
         pass
 
-    cost = float(payload.get("total_cost_usd") or 0.0)
-    turns = int(payload.get("num_turns") or 0)
+    cost, cost_valid = _coerce_float(payload.get("total_cost_usd") or 0.0)
+    turns, turns_valid = _coerce_int(payload.get("num_turns") or 0)
     text = str(payload.get("result") or "")
+
+    if not (cost_valid and turns_valid):
+        # Syntactically valid JSON but a non-numeric total_cost_usd/num_turns
+        # (schema drift, a truncated/odd claude response) -- degrade to a
+        # clean failed RunResult, same as fully-invalid JSON below, instead
+        # of letting a bare float()/int() cast raise and skip state.save()
+        # in run_cycle.
+        return RunResult(
+            ok=False,
+            cost_usd=cost,
+            num_turns=turns,
+            text=text,
+            error="claude returned non-numeric cost/turns fields",
+        )
 
     if proc.returncode != 0:
         detail = text or (proc.stderr or "").strip() or f"exit {proc.returncode}"
