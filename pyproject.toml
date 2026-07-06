@@ -25,6 +25,11 @@ classifiers = [
 dynamic = ["version"]
 dependencies = ["typer>=0.12"]
 
+[project.urls]
+Homepage = "https://github.com/KevinIssaDev/troupe"
+Repository = "https://github.com/KevinIssaDev/troupe"
+Changelog = "https://github.com/KevinIssaDev/troupe/blob/main/CHANGELOG.md"
+
 [project.scripts]
 troupe = "troupe.cli:main"
 
