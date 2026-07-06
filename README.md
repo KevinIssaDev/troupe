@@ -8,6 +8,10 @@ Troupe gives your repository a named cast of AI specialists — a lead, a backen
 
 ```
 $ uvx troupe init
+Project: your-project
+Detected: ...
+Proposed cast: ...
+Cast this team? [y/N]: y
 
 Cast:
   Wright     Lead
@@ -38,12 +42,16 @@ Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/) (or pip), Claude Co
 
 ```bash
 cd your-project
-uvx troupe init                       # default cast: lead, backend, frontend, tester
-uvx troupe init --roles lead,backend,frontend,tester,security,devops,docs
+uvx troupe init                       # scans the repo, proposes a tailored cast, confirms before writing
+uvx troupe init --yes                 # accept the proposed cast without prompting (CI-friendly)
+uvx troupe init --roles lead,backend,frontend,tester,security,devops,docs   # skip the proposal, cast exactly these
+uvx troupe init --no-scan             # skip the scan entirely: default cast, generic charters
 git add .troupe .claude && git commit -m "cast the troupe"
 ```
 
-Then open Claude Code in the project. The `SessionStart` hook injects the roster, standing rules, and recent decisions into every session automatically. Spawn cast members as subagents (or, with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, as teammates) by their agent type:
+`init` scans the repo first — manifests, CLI entrypoints, frameworks, tests, CI, infra, docs markers — and proposes a cast with per-role rationale before writing anything (`--dry-run` previews without writing). In a non-interactive shell (CI, scripts), bare `init` exits 2 asking for `--yes` or `--roles` rather than scaffolding silently. The scan is monorepo-aware: a repo with no root manifest but several projects nested a few directories down (e.g. `api/`, `ui/`) is detected as `kind: monorepo`, and the proposal covers every discovered component.
+
+Then open Claude Code in the project. The `SessionStart` hook injects the roster, standing rules, and recent decisions into every session automatically. Run `/troupe-explore` to have every active cast member read their own ownership area of the codebase and record findings in their own `history.md` — a deliberate, user-invoked deep pass beyond the scan's deterministic summary. Spawn cast members as subagents (or, with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, as teammates) by their agent type:
 
 ```
 Spawn a teammate using the mason agent type to build the API endpoints,
@@ -65,13 +73,15 @@ uvx troupe upgrade     # refreshes troupe-owned files; never touches team state
 ├── decisions.md         # append-only decision log (auto-fed by hook)
 ├── directives.md        # standing rules, edit in place
 ├── policy.json          # governance policy: protected paths, PII, gates
+├── profile.json         # the scan's project profile (kind, languages, signals, components)
 ├── config.json · casting-state.json
 └── agents/{name}/
-    ├── charter.md       # role definition — yours to edit
+    ├── charter.md       # role definition, seeded with what the scan found — yours to edit
     └── history.md       # accumulated knowledge — the agent appends
 .claude/
 ├── settings.json        # hook wiring (merged non-destructively)
 ├── hooks/               # six self-contained governance scripts (stdlib-only)
+├── commands/troupe-explore.md  # the /troupe-explore slash command
 └── agents/{name}.md     # compiled definitions: teammate types AND subagents
 ```
 
@@ -132,11 +142,11 @@ uvx troupe upgrade       # refresh hook scripts, agent definitions, policy secti
 ```bash
 git clone https://github.com/KevinIssaDev/troupe && cd troupe
 uv sync --dev
-uv run pytest            # 86 tests; gh and claude are stubbed throughout
-uv run ruff check . && uv run pyright
+uv run pytest            # 150+ tests; gh and claude are stubbed throughout
+uv run ruff check . && uv run ruff format --check . && uv run pyright
 ```
 
-CI runs the suite on Ubuntu, macOS, and Windows (cross-platform is a first-class concern — paths via `pathlib`, subprocess in list form, no shell strings). Releases publish to PyPI via Trusted Publishing on version tags.
+CI runs the suite on Ubuntu, macOS, and Windows (cross-platform is a first-class concern — paths via `pathlib`, subprocess in list form, no shell strings). Releases publish to PyPI via Trusted Publishing on version tags. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow (branching, one-PR-per-change, the troupe cast you'll encounter in this repo).
 
 ## License
 

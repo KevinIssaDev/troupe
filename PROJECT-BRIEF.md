@@ -1,6 +1,17 @@
 # Cadre — a persistent, governed AI team for Claude Code
 
-**Status:** pre-implementation planning document
+**Status:** pre-implementation planning document — **historical.** This is the
+original design brief, kept as-is for the reasoning it records. The project
+shipped under the name **Troupe** (`.cadre/` → `.troupe/`, `cadre` → `troupe`),
+and Ralph (§9) shipped as **Reeve**. As of 0.3.0, milestones M0–M7 below are
+done and several items from "Open decisions" (§11) and "Definition of done"
+(§12) are resolved differently than sketched here — see the per-section notes
+added below, [README.md](README.md) for current behavior, [CHANGELOG.md](CHANGELOG.md)
+for what shipped in which release, and `docs/design/` for the designs of
+what came after v1 (scan-aware init, monorepo-aware scanning,
+`/troupe-explore`). Section headings, the working name, and the original
+reasoning are left untouched below; only the roadmap/decision sections are
+annotated with what actually happened.
 **Working name:** Cadre (placeholder — rename freely; avoid "Squad"/"Team" for trademark/collision reasons)
 **Author:** Kevin, with Claude (Anthropic) assisting on design
 **Reference implementation (prior art, MIT licensed, Node/TypeScript):** local clone at `E:\squad` — https://github.com/bradygaster/squad
@@ -154,6 +165,12 @@ Verify exact hook payload shapes and exit-code semantics against current docs be
 7. **M6** — packaging polish: `uvx` zero-install path, Claude Code plugin manifest, PyPI trusted-publisher release workflow
 8. **M7** — docs (README, quickstart, comparison table vs. Agent Teams/Gas Town/Multiclaude), initial public release
 
+> **Done, as of 0.1.0–0.3.0.** M0–M7 all shipped (see CHANGELOG.md 0.1.0).
+> Work continued past v1 with three more features not anticipated by this
+> build order: scan-aware `init` (0.2.0 — the scanner/advisor that replaces
+> the "casting/naming" hardcoded default in M1), `/troupe-explore` (0.2.0),
+> and monorepo-aware scanning (0.3.0). See `docs/design/` for each.
+
 ## 11. Open decisions (flag these back to the human, don't guess silently)
 
 - Final project name (avoid collision with Squad, Gas Town, Multiclaude)
@@ -161,6 +178,14 @@ Verify exact hook payload shapes and exit-code semantics against current docs be
 - Whether Ralph auth uses a GitHub App or a personal access token by default
 - Whether to require Agent Teams' experimental flag as a hard dependency, or ship a subagent-only fallback mode from day one
 - Naming theme for the casting/name pool (pick something distinct from Squad's)
+
+> **Resolved:** name is **Troupe**; license is **MIT** (as recommended);
+> Ralph (shipped as **Reeve**) authenticates via the `gh` CLI's own existing
+> auth, not a GitHub App or a standalone PAT — no separate auth story was
+> built; Agent Teams is a soft dependency (works with the flag on, degrades
+> to plain subagents when off — see README's "Why Troupe when Agent Teams
+> exists"); the naming theme is English craft/occupational surnames (Wright,
+> Mason, Webster, Sawyer, Ward, Piper, Page, ...).
 
 ## 12. Definition of done for v1
 
@@ -170,3 +195,10 @@ Verify exact hook payload shapes and exit-code semantics against current docs be
 - Ralph can run one full poll → context-build → headless-invoke → comment-back cycle against a real test repo
 - CI green on ubuntu/macos/windows
 - Published on PyPI, installable and documented for a stranger with no prior context
+
+> **All met.** `troupe init` scaffolds `.troupe/` + `.claude/settings.json`
+> well under 10 seconds; the file-guard hook is unit-tested blocking a
+> disallowed write; the decision-log hook fires on `TaskCompleted`; Reeve's
+> execute path was rehearsed live pre-0.1.0 (see CHANGELOG.md 0.1.0's release
+> note: one governed cycle, $0.55 of a $2.00 budget); CI is green across all
+> three OSes; the package is live on PyPI as `troupe`.
