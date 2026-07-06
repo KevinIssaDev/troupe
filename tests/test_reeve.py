@@ -314,6 +314,31 @@ def test_cycle_threads_timeout_to_runner(project: Path) -> None:
     assert seen["timeout_minutes"] == pytest.approx(7.5)
 
 
+def test_child_env_strips_session_vars_when_nested() -> None:
+    from troupe.reeve.runner import _child_env
+
+    environ = {
+        "PATH": "/usr/bin",
+        "CLAUDECODE": "1",
+        "ANTHROPIC_API_KEY": "session-scoped",
+        "CLAUDE_CODE_SESSION_ID": "abc",
+        "HOME": "/home/kevin",
+    }
+    env = _child_env(environ)
+    assert env is not None
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "CLAUDECODE" not in env
+    assert "CLAUDE_CODE_SESSION_ID" not in env
+    assert env["PATH"] == "/usr/bin" and env["HOME"] == "/home/kevin"
+
+
+def test_child_env_inherits_outside_a_session() -> None:
+    from troupe.reeve.runner import _child_env
+
+    # cron habitat: ANTHROPIC_API_KEY may be the user's deliberate auth
+    assert _child_env({"ANTHROPIC_API_KEY": "user-key", "PATH": "/usr/bin"}) is None
+
+
 # ── cycle ────────────────────────────────────────────────────────────
 
 

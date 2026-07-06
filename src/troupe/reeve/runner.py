@@ -9,8 +9,9 @@ firing when `--bare` becomes the default for `-p` (per current docs).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -79,6 +80,26 @@ def build_argv(
     return argv
 
 
+def _child_env(environ: Mapping[str, str] = os.environ) -> dict[str, str] | None:
+    """Environment for the child claude process.
+
+    When Reeve itself runs inside a Claude Code session (CLAUDECODE is set),
+    the harness scopes ANTHROPIC_API_KEY and CLAUDE_CODE_* to that session;
+    inheriting them makes the child fail auth ('Invalid API key') instead of
+    using the user's own login. Strip them so the child authenticates like a
+    fresh session. Outside a session — cron, systemd, Task Scheduler, the
+    normal Reeve habitat — inherit untouched: users may rely on
+    ANTHROPIC_API_KEY there deliberately.
+    """
+    if not environ.get("CLAUDECODE"):
+        return None
+    return {
+        key: value
+        for key, value in environ.items()
+        if key not in ("ANTHROPIC_API_KEY", "CLAUDECODE") and not key.startswith("CLAUDE_CODE_")
+    }
+
+
 def _run(
     argv: Sequence[str], stdin_text: str, timeout_seconds: float, cwd: Path
 ) -> subprocess.CompletedProcess[str]:
@@ -92,6 +113,7 @@ def _run(
         encoding="utf-8",
         timeout=timeout_seconds,
         cwd=str(cwd),
+        env=_child_env(),
     )
 
 
