@@ -285,4 +285,5 @@ def _echo_result(result: ScaffoldResult) -> None:
         typer.echo(f"Updated {rel}{note}.")
     troupe_dir = result.root / ".troupe"
     typer.echo(f"Team state: {troupe_dir}")
-    typer.echo("Next: open Claude Code and run /troupe-explore, or tell the team directly.")
+    typer.echo("Next: commit .troupe/ and .claude/ so the team travels with the repo.")
+    typer.echo("Then: open Claude Code and run /troupe-explore, or tell the team directly.")

@@ -93,8 +93,8 @@ def test_init_creates_expected_tree(tmp_path: Path) -> None:
 
 def test_init_next_steps_points_to_explore(tmp_path: Path) -> None:
     output = run_init(tmp_path, "--no-scan")
-    assert "Next: open Claude Code and run /troupe-explore, or tell the team directly." in output
-    assert "commit .troupe/" not in output
+    assert "Next: commit .troupe/ and .claude/ so the team travels with the repo." in output
+    assert "Then: open Claude Code and run /troupe-explore, or tell the team directly." in output
 
 
 def test_agent_definition_has_valid_frontmatter(tmp_path: Path) -> None:
