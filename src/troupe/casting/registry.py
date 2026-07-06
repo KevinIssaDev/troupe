@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from importlib.resources import files
 
+from troupe.casting.roles import Role, resolve_role
+
 
 class CastExhaustedError(Exception):
     """Raised when the name pool has no unused names left."""
@@ -26,6 +28,9 @@ class PoolEntry:
 class CastMember:
     entry: PoolEntry
     role: str
+    #: Specialized charter persisted at cast time (scan-aware init); None means
+    #: "resolve from the static catalog" — the behavior for all pre-scan casts.
+    charter: Role | None = None
 
     @property
     def name(self) -> str:
@@ -34,6 +39,10 @@ class CastMember:
     @property
     def slug(self) -> str:
         return self.entry.slug
+
+    def effective_role(self) -> Role:
+        """The persisted specialized charter if one exists, else the catalog role."""
+        return self.charter if self.charter is not None else resolve_role(self.role)
 
 
 def load_pool() -> list[PoolEntry]:

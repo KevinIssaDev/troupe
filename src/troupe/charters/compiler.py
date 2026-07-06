@@ -13,7 +13,6 @@ from importlib.resources import files
 from string import Template
 
 from troupe.casting.registry import CastMember
-from troupe.casting.roles import resolve_role
 
 
 def _template(name: str) -> Template:
@@ -22,7 +21,7 @@ def _template(name: str) -> Template:
 
 
 def _member_context(member: CastMember, created_at: str) -> dict[str, str]:
-    role = resolve_role(member.role)
+    role = member.effective_role()
     return {
         "name": member.name,
         "slug": member.slug,
@@ -35,12 +34,22 @@ def _member_context(member: CastMember, created_at: str) -> dict[str, str]:
     }
 
 
-def render_charter(member: CastMember, created_at: str) -> str:
-    return _template("charter.md").substitute(_member_context(member, created_at))
+def render_charter(member: CastMember, created_at: str, project_context: str = "") -> str:
+    """`project_context` is the sanitized block from `render_project_context`;
+    empty (e.g. --no-scan) collapses the section to nothing — the placeholder
+    sits on what is otherwise a blank template line, so output without context
+    is byte-identical to the pre-scan template."""
+    context = _member_context(member, created_at)
+    context["project_context"] = (
+        f"\n## Project context\n\n{project_context}\n" if project_context else ""
+    )
+    return _template("charter.md").substitute(context)
 
 
-def render_history(member: CastMember, created_at: str) -> str:
-    return _template("history.md").substitute(_member_context(member, created_at))
+def render_history(member: CastMember, created_at: str, project_context: str = "") -> str:
+    context = _member_context(member, created_at)
+    context["project_context"] = f"\n{project_context}\n" if project_context else ""
+    return _template("history.md").substitute(context)
 
 
 def render_agent_definition(member: CastMember, created_at: str) -> str:

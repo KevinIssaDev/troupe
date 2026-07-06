@@ -7,7 +7,7 @@
 - **Name:** $name
 - **Role:** $role_title
 - **Expertise:** $expertise
-
+$project_context
 ## Ownership
 
 $ownership_bullets
