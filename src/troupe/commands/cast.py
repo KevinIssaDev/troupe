@@ -1,7 +1,7 @@
 """`troupe cast` — grow or retire the cast after `troupe init`.
 
 `--add-role` is a direct pass-through to `scaffold()`'s existing multiset
-gap-fill (docs/design/cast-recast-retire.md) — zero new casting logic.
+gap-fill — zero new casting logic.
 `--retire` is new: archives a member in casting-state.json (status ->
 "retired", `retiredAt` set) and deletes their compiled
 `.claude/agents/{slug}.md`; `charter.md`/`history.md` are never touched.

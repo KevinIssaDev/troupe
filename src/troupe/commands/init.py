@@ -1,6 +1,6 @@
 """`troupe init` — scan the repository, propose a tailored cast, confirm, scaffold.
 
-Flow (docs/design/scan-aware-init.md, signed off 2026-07-06):
+Flow (scan-aware init, shipped 0.2.0 — see CHANGELOG.md):
   scan (deterministic, offline) -> propose (rule table + specialization) ->
   confirm (TTY prompt / --yes / --dry-run; non-TTY without --yes/--roles
   exits 2) -> scaffold. No file is written before confirmation. Explicit

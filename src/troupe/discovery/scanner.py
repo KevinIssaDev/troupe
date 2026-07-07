@@ -5,7 +5,7 @@ explicitly, plus one sorted directory walk limited to depth 5 from the root
 (skipping vendored/build dirs), capped at 3,000 entries; no file larger than
 512 KB is read; no network, no subprocesses. Same tree in, same profile out.
 
-Monorepo-aware (docs/design/monorepo-scan.md): a directory directly
+Monorepo-aware (shipped 0.3.0 — see CHANGELOG.md): a directory directly
 containing a known manifest filename is a "component root". Every
 per-ecosystem/marker scan runs once per discovered component root (the
 scanned root itself, plus any nested ones), with evidence paths prefixed by
@@ -54,7 +54,7 @@ _MAX_FILE_BYTES = 512 * 1024
 _MANIFEST_NAMES = ("pyproject.toml", "setup.cfg", "package.json", "Cargo.toml", "go.mod")
 
 # Legibility cap (not a cost control — extra components are nearly free to
-# scan, just not free to display). See docs/design/monorepo-scan.md.
+# scan, just not free to display).
 MAX_COMPONENTS = 12
 
 # Extension census -> canonical language tokens.
@@ -243,8 +243,8 @@ def _discover_components(entry_set: set[str]) -> tuple[list[str], int]:
     legitimate independent sub-package, and treating every nested manifest
     as its own component would produce phantom components and spurious
     casting signals more often than it would correctly surface a real
-    nested package (accepted tradeoff, see docs/design/monorepo-scan.md and
-    .troupe/decisions.md — revisit only on real-world evidence otherwise).
+    nested package (accepted tradeoff, see .troupe/decisions.md — revisit
+    only on real-world evidence otherwise).
 
     `sorted()` over paths is safe for parent-before-child ordering: a
     directory's own relative path is always a literal string prefix of its

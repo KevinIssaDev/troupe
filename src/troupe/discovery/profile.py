@@ -1,7 +1,7 @@
 """Project profile: the scanner's output type, its sanitization boundary, and
 its renderings.
 
-Security invariant (docs/design/scan-aware-init.md): every string extracted
+Security invariant: every string extracted
 from a scanned repository is untrusted input. `sanitize_extracted` is applied
 at the scanner boundary — inside scanner.py and on deserialization here — so
 no consumer can receive raw repo text. Rendered blocks frame extracted values

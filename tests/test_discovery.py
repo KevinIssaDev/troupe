@@ -1,6 +1,6 @@
 """Tests for `troupe.discovery`: scanner fixtures, the sanitization boundary,
-advisor casting rules, and the prompt-injection guarantee from the Security
-section of docs/design/scan-aware-init.md.
+advisor casting rules, and the prompt-injection guarantee documented in
+discovery/profile.py's "Security invariant" docstring.
 """
 
 import json
@@ -111,7 +111,7 @@ def write_rust_cli(root: Path) -> None:
 
 def write_howler_shape(root: Path) -> None:
     """No root manifest; ui/ (React), client/ (Python + tests), api/ (Python)
-    — the confirmed real-world repro from docs/design/monorepo-scan.md."""
+    — a confirmed real-world monorepo shape (see .troupe/decisions.md)."""
     (root / "ui").mkdir()
     (root / "ui" / "package.json").write_text(
         json.dumps(
@@ -305,9 +305,9 @@ def test_mixed_monorepo_profile(tmp_path: Path) -> None:
 
 
 def test_single_root_manifest_is_unchanged(tmp_path: Path) -> None:
-    # Hard invariant (docs/design/monorepo-scan.md): when exactly one
-    # component root is found and it is the scanned root itself, scan()
-    # output must be byte-identical to the pre-monorepo-scan behavior.
+    # Hard invariant: when exactly one component root is found and it is
+    # the scanned root itself, scan() output must be byte-identical to the
+    # pre-monorepo-scan behavior.
     write_python_cli(tmp_path)
     profile = scan(tmp_path)
 
@@ -346,7 +346,7 @@ def test_single_root_manifest_signal_order_is_pinned(tmp_path: Path) -> None:
     )
 
 
-# ── monorepo scanning (docs/design/monorepo-scan.md) ──────────────────
+# ── monorepo scanning (shipped 0.3.0 — see CHANGELOG.md) ───────────────
 
 
 def test_howler_shape_profiles_as_monorepo(tmp_path: Path) -> None:
