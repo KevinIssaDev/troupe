@@ -154,3 +154,75 @@ only if real-world reports show the opposite" per the decision), just
 noting there's no escape hatch today if that revisit happens — the fix
 would need a new mechanism (e.g. a `.troupe/scan-overrides` allowlist),
 not a tweak to the existing rule.
+
+## 2026-07-07: decisions.md has no archival — not urgent yet, but the ceiling should be a hook change, not a new "Scribe" agent
+
+**Where:** `src/troupe/templates/hooks/troupe_decision_log.py` (the
+`TaskCompleted` hook that auto-appends one entry per completed task);
+`.troupe/decisions.md` itself.
+
+**Context:** Kevin asked whether troupe has anything like Squad's Scribe
+(`E:\squad\.squad\agents\scribe\charter.md`) — a dedicated cast member,
+always spawned `mode: "background"`, whose whole job is merging a
+decisions inbox into `decisions.md`, enforcing a two-tier size-based
+archival ceiling (30-day archive if >20KB, 7-day archive if still >50KB
+after that), writing per-session logs under `.squad/log/`, propagating
+cross-agent updates, and auto-committing `.squad/` to git.
+
+**What troupe actually has, verified by reading the hook directly:**
+`troupe_decision_log.py` appends one fixed-format entry
+(`### <date>: Completed — <task name>` / `**By:** troupe (TaskCompleted
+hook)` / one-line `**What:**`) per completed task, and nothing else. No
+archival, no size ceiling, no session logs, no cross-agent propagation, no
+auto-commit, and no dedicated spawned agent — it's a stdlib-only hook
+script invoked by the harness, not a cast member. Every one of Squad's
+gaps is real; none of it exists in troupe today.
+
+**Is unbounded growth a real near-term problem?** Partially yes, sooner
+than "premature" would suggest: this repo's own `decisions.md` is already
+46KB after about one week of active work — past Squad's own 20KB Tier-1
+threshold already, and roughly halfway to its 50KB Tier-2 threshold. At
+this rate a few more weeks of a project this active would clear 50KB. That
+said, "large file" and "actually broken" aren't the same thing yet: nothing
+currently reads `decisions.md` in a way a large size actually harms —
+cast members read it once at task start (a few hundred KB of text is not
+an LLM-context problem at today's model context windows), and it isn't
+executed or parsed by any tool that would choke on size. So: worth having
+a plan, not worth an emergency fix.
+
+**Does a dedicated always-background "Scribe" cast member fit troupe's
+model?** No — checked `src/troupe/casting/roles.py` and the whole
+`casting/` package for anything resembling Squad's `mode: "background"`
+concept and found nothing: troupe's cast members are Task-tool subagent
+definitions (`.claude/agents/{slug}.md`) spawned on demand, by name, when
+the lead or user decides a task needs them (see `/troupe-explore`'s
+explicit fan-out, or a direct `Agent` call) — there is no primitive for
+"this cast member is always running in the background regardless of what
+the user is doing," and no code anywhere spawns an agent automatically on
+a schedule or as a side effect of other work (the closest thing, Reeve, is
+a separate poll loop / `claude -p` subprocess mechanism, not a
+Task-spawned cast member, and it runs unattended by explicit design, not
+"always in the background during a session"). Grepping for any
+`git add .troupe` / `git commit` call anywhere in `src/troupe/` also
+turned up nothing — troupe has no auto-commit mechanism at all today, and
+this repo's own dogfooding choice is not to commit `.troupe/` in the first
+place (git-excluded via `.git/info/exclude`), so Scribe's auto-commit step
+wouldn't even apply here without first reversing that separate decision.
+Bolting on a Squad-style always-background agent would mean inventing a
+spawn primitive troupe has no other use for, just to host archival logic.
+
+**Recommendation:** Don't build a Scribe-equivalent agent. If/when
+decisions.md's size actually becomes a problem (a concrete trigger:
+crosses ~50KB, or a cast member visibly struggles to find recent entries),
+the better-fitted fix is a small, size-gated archival step added to the
+*existing* mechanisms that already touch `decisions.md` — either
+`troupe_decision_log.py` (check size before appending; if over a
+threshold, move entries older than N days to `decisions.archive.md` before
+writing the new one) or the new `troupe charter append`/`edit` CLI once it
+ships (same file, same "unconditional auto-log" pattern) — not a new
+spawned cast member. This matches troupe's existing architecture (hooks +
+CLI commands doing narrow, deterministic file maintenance) rather than
+importing Squad's "dedicated agent for memory hygiene" pattern wholesale.
+Not implemented here — this is a recommendation, filed because the
+finding is concrete (46KB today, no ceiling anywhere) even though the fix
+isn't urgent enough to build unprompted.
