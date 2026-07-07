@@ -8,12 +8,11 @@ the on-disk convention, superseded by `.troupe/`/`troupe`. Ralph (§9) shipped
 as **Reeve**. As of 0.3.0, milestones M0–M7 below are done and several items
 from "Open decisions" (§11) and "Definition of done" (§12) are resolved
 differently than sketched here — see the per-section notes added below,
-[README.md](README.md) for current behavior, [CHANGELOG.md](CHANGELOG.md)
-for what shipped in which release, and `docs/design/` for the designs of
-what came after v1 (scan-aware init, monorepo-aware scanning,
-`/troupe-explore`). Section headings and the original reasoning are left
-untouched below; only the roadmap/decision sections are annotated with what
-actually happened.
+[README.md](README.md) for current behavior, and [CHANGELOG.md](CHANGELOG.md)
+for what shipped in which release, including what came after v1 (scan-aware
+init, monorepo-aware scanning, `/troupe-explore`). Section headings and the
+original reasoning are left untouched below; only the roadmap/decision
+sections are annotated with what actually happened.
 **Author:** Kevin, with Claude (Anthropic) assisting on design
 **Reference implementation (prior art, MIT licensed, Node/TypeScript):** local clone at `E:\squad` — https://github.com/bradygaster/squad
 
@@ -170,7 +169,7 @@ Verify exact hook payload shapes and exit-code semantics against current docs be
 > Work continued past v1 with three more features not anticipated by this
 > build order: scan-aware `init` (0.2.0 — the scanner/advisor that replaces
 > the "casting/naming" hardcoded default in M1), `/troupe-explore` (0.2.0),
-> and monorepo-aware scanning (0.3.0). See `docs/design/` for each.
+> and monorepo-aware scanning (0.3.0). See CHANGELOG.md for details on each.
 
 ## 11. Open decisions (flag these back to the human, don't guess silently)
 
