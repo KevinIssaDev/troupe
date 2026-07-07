@@ -1,5 +1,7 @@
 ---
 name: $slug
+# The " on this project's troupe." sentence below is parsed by the session-context
+# hook (AGENT_DESC_MARKER in hooks/troupe_session_context.py) to enrich roster lines.
 description: $name — $role_title on this project's troupe. $expertise. Use for $use_hint.
 ---
 

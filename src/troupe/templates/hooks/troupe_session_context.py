@@ -7,6 +7,12 @@ Injects the team into every session (lead, teammates, and subagents all run
 SessionStart): the cast roster, the standing directives, and the most recent
 decision titles — with pointers to the full files. This is what makes the
 troupe *ambient*: no one has to remember to read the team files first.
+
+Sessions are discriminated by the payload: a spawned cast member or subagent
+session carries `agent_type`/`agent_id`, the coordinating (main) session does
+not. Member sessions get the spawn-guidance sentence; the coordinating session
+gets an orchestrator block telling it to delegate to the owning cast member by
+default rather than doing specialist work inline.
 """
 
 import json
@@ -17,6 +23,11 @@ from pathlib import Path
 MAX_DIRECTIVES_CHARS = 2000
 MAX_RECENT_DECISIONS = 5
 MAX_TOTAL_CHARS = 9000
+MAX_ROSTER_LINE_CHARS = 240
+# Must match the description sentence in templates/agent.md:
+#   "$name — $role_title on this project's troupe. $expertise. Use for $use_hint."
+# The hook and agent template version together, so this literal split is safe.
+AGENT_DESC_MARKER = " on this project's troupe."
 
 
 def project_root(payload: dict) -> Path | None:
@@ -24,17 +35,44 @@ def project_root(payload: dict) -> Path | None:
     return Path(root) if root else None
 
 
+def agent_description(agents_dir: Path, slug: str) -> str | None:
+    """The description: line from the compiled agent definition's frontmatter,
+    or None if the file/frontmatter/line is missing or unreadable."""
+    try:
+        lines = (agents_dir / f"{slug}.md").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:20]:
+        if line.strip() == "---":
+            return None
+        if line.startswith("description:"):
+            return line[len("description:") :].strip().strip("\"'")
+    return None
+
+
 def roster_lines(troupe_dir: Path) -> list[str]:
     try:
         state = json.loads((troupe_dir / "casting-state.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
+    agents_dir = troupe_dir.parent / ".claude" / "agents"
     lines = []
     for slug, record in state.get("assignments", {}).items():
         if record.get("status") != "active":
             continue
         name = record.get("name", slug.title())
         role = record.get("role", "member")
+        desc = agent_description(agents_dir, slug)
+        if desc:
+            head, sep, tail = desc.partition(AGENT_DESC_MARKER)
+            if sep and tail.strip():
+                line = f"- {head} (agent type: {slug}): {tail.strip()}"
+                if len(line) > MAX_ROSTER_LINE_CHARS:
+                    line = line[:MAX_ROSTER_LINE_CHARS] + "…"
+                lines.append(line)
+                continue
         lines.append(f"- {name} — {role} (agent type: {slug})")
     return lines
 
@@ -58,7 +96,7 @@ def recent_decisions(troupe_dir: Path) -> list[str]:
     return titles[-MAX_RECENT_DECISIONS:]
 
 
-def build_context(troupe_dir: Path) -> str:
+def build_context(troupe_dir: Path, is_member_session: bool = False) -> str:
     parts = [
         "This repository has a troupe: a persistent, named AI team. "
         "Its state lives in .troupe/ and its members exist as agent "
@@ -67,10 +105,23 @@ def build_context(troupe_dir: Path) -> str:
     roster = roster_lines(troupe_dir)
     if roster:
         parts.append("Cast roster:\n" + "\n".join(roster))
-        parts.append(
-            "When spawning teammates or subagents for project work, use these "
-            "cast agent types and address members by their names."
-        )
+        if is_member_session:
+            parts.append(
+                "When spawning teammates or subagents for project work, use these "
+                "cast agent types and address members by their names."
+            )
+        else:
+            parts.append(
+                "You are the coordinating session for this troupe, not a cast "
+                "member. Delegation is the default: when a task falls in a cast "
+                "member's area above, spawn that member (their agent type) to do "
+                "it — doing their specialist work yourself is a failure mode, "
+                "even for quick sweeps. Do work directly only when no cast "
+                "member owns it. If a task spans areas or ownership is unclear, "
+                "route it to the lead to split. Address members by name. (If you "
+                "are a spawned cast member reading this, your charter governs "
+                "instead — ignore this paragraph.)"
+            )
     directives = directives_text(troupe_dir)
     if directives:
         parts.append("Standing team rules (.troupe/directives.md):\n" + directives)
@@ -99,12 +150,15 @@ def main() -> int:
     if not troupe_dir.is_dir():
         return 0
 
+    # Spawned cast members and subagents carry agent identity in the payload;
+    # the coordinating (main) session does not.
+    is_member = bool(payload.get("agent_type") or payload.get("agent_id"))
     print(
         json.dumps(
             {
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
-                    "additionalContext": build_context(troupe_dir),
+                    "additionalContext": build_context(troupe_dir, is_member_session=is_member),
                 }
             }
         )

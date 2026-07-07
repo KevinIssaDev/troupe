@@ -102,7 +102,7 @@ Names come from English occupational surnames, chosen so the etymology quietly m
 | Decision log | `TaskCompleted` | Appends a structured entry to `decisions.md` for every completed task |
 | Review gate | `TaskCompleted` | Opt-in: blocks completion until a human drops a marker in `.troupe/approvals/` — which is itself write-protected, so agents can't self-approve |
 | Idle nudge | `TeammateIdle` | Sends idling teammates back for a final sweep — strictly bounded (2 nudges/agent/session), so no infinite keep-alive |
-| Session context | `SessionStart` | Injects roster + directives + recent decisions into every session |
+| Session context | `SessionStart` | Injects roster + directives + recent decisions into every session, and tells the coordinating session to delegate to the owning cast member by default |
 
 Policy lives in `.troupe/policy.json` — patterns, allowlists, and toggles are yours to edit; the file guard protects the file itself from agents.
 
