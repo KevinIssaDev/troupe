@@ -197,6 +197,7 @@ def test_session_context_injects_roster_directives_decisions(project: Path) -> N
     assert WRIGHT_ENRICHED in context
     assert "You are the coordinating session" in context
     assert "Delegation is the default" in context
+    assert "When spawning teammates or subagents" not in context
     assert "Standing team rules" in context
     assert "Chose sqlite for Ralph state" in context
     assert len(context) < 10_000
@@ -251,6 +252,75 @@ def test_session_context_caps_overlong_enriched_roster_lines(project: Path) -> N
     assert line.endswith("…")
 
 
+def test_session_context_agent_id_alone_marks_member_session(project: Path) -> None:
+    context = session_context(project, agent_id="abc123")
+    assert "You are the coordinating session" not in context
+    assert "When spawning teammates or subagents" in context
+
+
+def test_session_context_skips_retired_members_even_with_agent_definition(
+    project: Path,
+) -> None:
+    # Retiring normally deletes the compiled agent .md, but the roster must
+    # key off casting-state's status — a lingering definition (hand-restored,
+    # partial retire) must not resurrect the member via enrichment.
+    state_path = project / ".troupe" / "casting-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["assignments"]["mason"]["status"] = "retired"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    context = session_context(project)
+    assert "(agent type: mason)" not in context
+    assert "- Mason" not in context
+    assert WRIGHT_ENRICHED in context
+
+
+def test_session_context_falls_back_when_frontmatter_never_closes(project: Path) -> None:
+    agent_def = project / ".claude" / "agents" / "mason.md"
+    agent_def.write_text(
+        "---\nname: mason\n\nBody prose, no closing fence and no description line.\n",
+        encoding="utf-8",
+    )
+    context = session_context(project)
+    assert "- Mason — backend (agent type: mason)" in context
+
+
+def test_session_context_strips_double_quotes_around_description(project: Path) -> None:
+    agent_def = project / ".claude" / "agents" / "mason.md"
+    agent_def.write_text(
+        "---\nname: mason\n"
+        'description: "Mason — Backend on this project\'s troupe. APIs and data."\n'
+        "---\n",
+        encoding="utf-8",
+    )
+    context = session_context(project)
+    assert "- Mason — Backend (agent type: mason): APIs and data." in context
+
+
+def test_session_context_single_quoted_description_falls_back(project: Path) -> None:
+    # YAML single-quoting doubles the apostrophe in "project's", so the
+    # naive parser's marker no longer matches — must degrade to the thin
+    # line rather than emit a half-parsed one.
+    agent_def = project / ".claude" / "agents" / "mason.md"
+    agent_def.write_text(
+        "---\nname: mason\ndescription: 'Mason — Backend on this project''s troupe. APIs.'\n---\n",
+        encoding="utf-8",
+    )
+    context = session_context(project)
+    assert "- Mason — backend (agent type: mason)" in context
+
+
+def test_session_context_falls_back_when_marker_tail_is_whitespace(project: Path) -> None:
+    agent_def = project / ".claude" / "agents" / "mason.md"
+    agent_def.write_text(
+        "---\nname: mason\ndescription: Mason — Backend on this project's troupe.   \n---\n",
+        encoding="utf-8",
+    )
+    context = session_context(project)
+    assert "- Mason — backend (agent type: mason)" in context
+    assert "- Mason — Backend (agent type: mason):" not in context
+
+
 def test_session_context_silent_outside_troupe_project(project: Path, tmp_path_factory) -> None:
     import os
     import subprocess
@@ -264,6 +334,26 @@ def test_session_context_silent_outside_troupe_project(project: Path, tmp_path_f
         capture_output=True,
         text=True,
         env={**os.environ, "CLAUDE_PROJECT_DIR": str(bare)},
+        timeout=30,
+    )
+    assert proc.returncode == 0
+    assert proc.stdout.strip() == ""
+
+
+def test_session_context_tolerates_non_dict_json_payload(project: Path) -> None:
+    # Valid JSON that isn't an object must never break session start:
+    # exit 0 and inject nothing (the top-level guard swallows the error).
+    import os
+    import subprocess
+    import sys
+
+    script = project / ".claude" / "hooks" / "troupe_session_context.py"
+    proc = subprocess.run(
+        [sys.executable, str(script)],
+        input=json.dumps([1, 2, 3]),
+        capture_output=True,
+        text=True,
+        env={**os.environ, "CLAUDE_PROJECT_DIR": str(project)},
         timeout=30,
     )
     assert proc.returncode == 0
