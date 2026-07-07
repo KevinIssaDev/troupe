@@ -164,22 +164,91 @@ def test_idle_nudge_respects_disabled_flag(project: Path) -> None:
 
 # ── session context ──────────────────────────────────────────────────
 
+# Mirrors MAX_ROSTER_LINE_CHARS in templates/hooks/troupe_session_context.py.
+MAX_ROSTER_LINE_CHARS = 240
+
+WRIGHT_ENRICHED = (
+    "- Wright — Lead (agent type: wright): Architecture, technical decisions, "
+    "code review, scope control. Use for"
+)
+
+
+def session_start(project_dir: Path, **extra) -> dict:
+    return {
+        "hook_event_name": "SessionStart",
+        "cwd": str(project_dir),
+        "source": "startup",
+        **extra,
+    }
+
+
+def session_context(project_dir: Path, **extra) -> str:
+    proc = run_hook(project_dir, "troupe_session_context.py", session_start(project_dir, **extra))
+    assert proc.returncode == 0
+    return json.loads(proc.stdout)["hookSpecificOutput"]["additionalContext"]
+
 
 def test_session_context_injects_roster_directives_decisions(project: Path) -> None:
     decisions = project / ".troupe" / "decisions.md"
     with decisions.open("a", encoding="utf-8") as f:
         f.write("\n### 2026-07-06: Chose sqlite for Ralph state\n**By:** Wright\n")
 
-    payload = {"hook_event_name": "SessionStart", "cwd": str(project), "source": "startup"}
-    proc = run_hook(project, "troupe_session_context.py", payload)
-    assert proc.returncode == 0
-
-    out = json.loads(proc.stdout)
-    context = out["hookSpecificOutput"]["additionalContext"]
-    assert "Wright — lead (agent type: wright)" in context
+    context = session_context(project)
+    assert WRIGHT_ENRICHED in context
+    assert "You are the coordinating session" in context
+    assert "Delegation is the default" in context
     assert "Standing team rules" in context
     assert "Chose sqlite for Ralph state" in context
     assert len(context) < 10_000
+
+
+def test_session_context_member_session_gets_spawn_guidance_not_orchestrator(
+    project: Path,
+) -> None:
+    # The directives block mentions "coordinating session" in every session,
+    # so scope the negative assertion to the orchestrator block's opener.
+    context = session_context(project, agent_type="mason", agent_id="abc")
+    assert "You are the coordinating session" not in context
+    assert "When spawning teammates or subagents" in context
+    assert WRIGHT_ENRICHED in context  # roster stays enriched for members
+
+
+def test_session_context_agent_type_alone_marks_member_session(project: Path) -> None:
+    context = session_context(project, agent_type="mason")
+    assert "You are the coordinating session" not in context
+    assert "When spawning teammates or subagents" in context
+
+
+def test_session_context_falls_back_to_thin_line_when_agent_definition_missing(
+    project: Path,
+) -> None:
+    (project / ".claude" / "agents" / "mason.md").unlink()
+    context = session_context(project)
+    assert "- Mason — backend (agent type: mason)" in context
+    assert WRIGHT_ENRICHED in context
+
+
+def test_session_context_falls_back_when_description_lacks_marker(project: Path) -> None:
+    agent_def = project / ".claude" / "agents" / "mason.md"
+    agent_def.write_text(
+        "---\nname: mason\ndescription: Mason, our backend specialist.\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+    context = session_context(project)
+    assert "- Mason — backend (agent type: mason)" in context
+
+
+def test_session_context_caps_overlong_enriched_roster_lines(project: Path) -> None:
+    agent_def = project / ".claude" / "agents" / "mason.md"
+    tail = "APIs. " + "x" * 320
+    agent_def.write_text(
+        f"---\nname: mason\ndescription: Mason — Backend on this project's troupe. {tail}\n---\n",
+        encoding="utf-8",
+    )
+    context = session_context(project)
+    line = next(ln for ln in context.splitlines() if ln.startswith("- Mason — Backend"))
+    assert len(line) <= MAX_ROSTER_LINE_CHARS + 1
+    assert line.endswith("…")
 
 
 def test_session_context_silent_outside_troupe_project(project: Path, tmp_path_factory) -> None:
