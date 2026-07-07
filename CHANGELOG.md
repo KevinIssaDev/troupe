@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.4.0 (2026-07-07)
+
+- New `troupe cast` command — grow or retire the cast after `init`.
+  `--add-role <role>` casts an additional member into a role using the
+  same gap-fill scaffolding as `init`; `--retire <name>` archives an
+  active member: the assignment is marked retired in casting-state
+  (never deleted), the compiled agent definition is removed, and the
+  member's row leaves `team.md` — their charter and history stay
+  untouched. Retired names are never reallocated to new members (this
+  also fixes a latent bug where name allocation only checked active
+  members, contradicting the never-reuse rule). Cast changes log their
+  own `decisions.md` entry. A `/troupe-cast` slash command ships
+  alongside, scaffolded and refreshed via `troupe upgrade` like
+  `/troupe-explore`.
+- The session-context hook now teaches the coordinating (main) session
+  to delegate: sessions with no agent identity get an orchestrator
+  block stating that work in a cast member's ownership area goes to
+  that member by default, and doing specialist work inline is a
+  failure mode. Roster lines are enriched with each member's expertise
+  and use-hint drawn from the compiled agent definitions (falling back
+  to the previous thin line on any read/parse failure), and a matching
+  directive lands in the directives template. Existing repos pick all
+  of this up via `troupe upgrade`.
+- `troupe init` now flags possible detection failure: a scan that
+  finds no signals and no languages says so in the proposal instead of
+  silently presenting the minimal roster as if the repo were read
+  correctly.
+- File-guard hardening: compiled agent definitions
+  (`.claude/agents/*.md`) are now protected paths, and the guard fails
+  closed on unexpected internal errors — an unhandled crash now blocks
+  the write with a clear message instead of surfacing a raw traceback.
+- Reeve no longer crashes when the child process reports non-numeric
+  cost/turns fields — the run degrades to a clean failed result and
+  cycle state is still saved, instead of losing the cycle counter and
+  any cost already spent.
+- Monorepo scan fix: frontend-only components are no longer cited as
+  backend evidence in the proposed roster's rationale.
+- Docs: CONTRIBUTING.md added; `docs/design/` retired (design docs are
+  no longer committed to the repo) and its dangling references swept.
+
 ## 0.3.0 (2026-07-06)
 
 - `troupe init`'s scan is now monorepo-aware. Previously it only checked
