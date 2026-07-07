@@ -96,6 +96,12 @@ def propose_plan(
     dropped = tuple(proposal.role.id for proposal in candidates[ROSTER_CAP:])
 
     suggestions: list[str] = []
+    if not profile.signals and not profile.languages:
+        suggestions.append(
+            "No signals or languages detected — this may mean the repo is "
+            "genuinely near-empty, or that detection failed to read it. "
+            "Worth a manual look before trusting this proposal."
+        )
     if not any(proposal.role.id == "frontend" for proposal in candidates):
         suggestions.append("Not cast: frontend (no frontend markers found).")
     auth = profile.first_signal("auth-dep")

@@ -885,6 +885,16 @@ def test_empty_repo_casts_lead_and_tester_only() -> None:
     assert "no tests detected" in tester.rationale
 
 
+def test_zero_signal_profile_suggests_detection_may_have_failed() -> None:
+    plan = propose_plan(make_profile())
+    assert any("detection failed" in line for line in plan.suggestions)
+
+
+def test_normal_profile_does_not_suggest_detection_failure() -> None:
+    plan = propose_plan(cli_profile())
+    assert not any("detection failed" in line for line in plan.suggestions)
+
+
 def test_roster_cap_drops_lowest_priority_roles() -> None:
     profile = make_profile(
         kind="mixed",
