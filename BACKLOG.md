@@ -85,13 +85,11 @@ cap (fair round-robin rather than first-N).
 
 **What's wrong:** The 2026-07-06 decision ("`--enrich` is dropped from the
 roadmap, superseded by `/troupe-explore`") retired the `--enrich` flag
-entirely, but this field comment (and a matching one in
-`docs/design/scan-aware-init.md`'s `ProjectProfile` sketch) still reads as
-if a v2 LLM-enrichment pass populating `notes` at init time is still on the
-roadmap. It isn't — `/troupe-explore` writes to each member's `history.md`
-instead, and nothing currently writes `ProjectProfile.notes` at all. Cheap
-fix, but worth doing before a future contributor reads the comment and
-resurrects `--enrich`.
+entirely, but this field comment still reads as if a v2 LLM-enrichment pass
+populating `notes` at init time is still on the roadmap. It isn't —
+`/troupe-explore` writes to each member's `history.md` instead, and nothing
+currently writes `ProjectProfile.notes` at all. Cheap fix, but worth doing
+before a future contributor reads the comment and resurrects `--enrich`.
 
 **Suggested fix:** Reword to something like `# reserved for future use;
 not populated by init or /troupe-explore` (or drop the field until
@@ -112,10 +110,10 @@ form specific observations" pass with no turn/token/cost limit stated
 anywhere in the command file. This is very likely fine in practice (it's
 user-invoked, interactive, and capped at 5 members by the roster cap), but
 it's an asymmetry nobody has stated as a deliberate tradeoff the way
-Reeve's ceilings were — worth either a short explicit note in
-`docs/design/troupe-explore.md` confirming "no ceiling needed, here's why"
-or, if repeat runs on large repos turn out to be expensive in practice, an
-actual bound.
+Reeve's ceilings were — worth either a short explicit note (e.g. in this
+file or `.troupe/decisions.md`, since design docs are no longer committed
+to the repo) confirming "no ceiling needed, here's why" or, if repeat runs
+on large repos turn out to be expensive in practice, an actual bound.
 
 ## 2026-07-07: Zero-signal detection-failed UX — confirmed still open, not yet a tracked issue anywhere
 
