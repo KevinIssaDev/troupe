@@ -69,8 +69,8 @@ This repository scaffolds itself with its own product: a persistent, named
 AI cast lives in `.troupe/` (charters, shared decision log, standing
 directives) and compiled agent definitions live in `.claude/agents/`. If
 you're working in this repo with Claude Code, you'll encounter that cast —
-Wright (lead), Mason (backend), Sawyer (tester) — and its standing rules in
-`.troupe/directives.md`.
+Wright (Lead), Mason (Core), Sawyer (Tester), Piper (DevOps), Page (Docs) —
+and its standing rules in `.troupe/directives.md`.
 
 A few things worth knowing as a contributor:
 
