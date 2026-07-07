@@ -5,10 +5,12 @@ hook script as a subprocess with a payload on stdin — the same way Claude
 Code invokes it. Exit code 2 blocks; exit code 0 allows.
 """
 
+import importlib.util
 import json
 import os
 import subprocess
 import sys
+from importlib.resources import as_file, files
 from pathlib import Path
 
 import pytest
@@ -89,6 +91,83 @@ def test_guard_ignores_paths_outside_project(
     payload["tool_input"]["file_path"] = str(outside)
     proc = run_hook(project, "troupe_file_guard.py", payload)
     assert proc.returncode == 0
+
+
+def test_guard_allows_proposal_staging(project: Path) -> None:
+    # .troupe/proposals/ is deliberately NOT protected: staging a charter
+    # proposal is the agent-side half of the `troupe charter` human gate.
+    proc = run_hook(
+        project,
+        "troupe_file_guard.py",
+        write_payload(project, ".troupe/proposals/charter-mason.json"),
+    )
+    assert proc.returncode == 0
+    assert proc.stderr == ""
+
+
+# ── file guard: denial messages name the sanctioned path ─────────────
+
+
+def test_guard_charter_denial_names_troupe_charter(project: Path) -> None:
+    proc = run_hook(
+        project,
+        "troupe_file_guard.py",
+        write_payload(project, ".troupe/agents/wright/charter.md", tool="Edit"),
+    )
+    assert proc.returncode == 2
+    assert "troupe charter" in proc.stderr
+    assert "--approve" in proc.stderr
+    assert "history.md" in proc.stderr  # names the observed workaround as off-limits
+
+
+def test_guard_casting_state_denial_names_troupe_cast(project: Path) -> None:
+    proc = run_hook(
+        project, "troupe_file_guard.py", write_payload(project, ".troupe/casting-state.json")
+    )
+    assert proc.returncode == 2
+    assert "troupe cast" in proc.stderr
+
+
+def test_guard_agent_def_denial_names_troupe_upgrade(project: Path) -> None:
+    proc = run_hook(
+        project,
+        "troupe_file_guard.py",
+        write_payload(project, ".claude/agents/wright.md", tool="Edit"),
+    )
+    assert proc.returncode == 2
+    assert "troupe upgrade" in proc.stderr
+
+
+def test_guard_user_added_pattern_gets_generic_message(project: Path) -> None:
+    policy_path = project / ".troupe" / "policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["protectedPaths"].append("secret/*")
+    policy_path.write_text(json.dumps(policy, indent=2) + "\n", encoding="utf-8")
+
+    proc = run_hook(project, "troupe_file_guard.py", write_payload(project, "secret/key.txt"))
+
+    assert proc.returncode == 2
+    assert "team governance state" in proc.stderr  # the generic fallback
+    assert "troupe charter" not in proc.stderr
+
+
+def test_guidance_keys_match_default_policy_patterns() -> None:
+    """Drift test: every GUIDANCE key must appear verbatim in the shipped
+    templates/policy.json protectedPaths, or an edited default pattern would
+    silently downgrade its denial message to the generic fallback."""
+    resource = files("troupe.templates").joinpath("hooks/troupe_file_guard.py")
+    with as_file(resource) as path:
+        spec = importlib.util.spec_from_file_location("troupe_file_guard_template", path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+    defaults = json.loads(
+        files("troupe.templates").joinpath("policy.json").read_text(encoding="utf-8")
+    )
+    protected = defaults["protectedPaths"]
+    for key in module.GUIDANCE:
+        assert key in protected, f"GUIDANCE key '{key}' is not a default protected pattern"
 
 
 def test_guard_survives_malformed_payload(project: Path) -> None:

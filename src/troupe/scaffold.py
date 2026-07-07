@@ -171,7 +171,7 @@ def scaffold(
         _refresh_file(troupe_dir / "profile.json", profile_to_json(plan.profile), result)
 
     if new_members:
-        _save_state(troupe_dir, state)
+        save_state(troupe_dir, state)
 
     return result
 
@@ -204,7 +204,7 @@ def load_state(troupe_dir: Path) -> dict:
     return {"version": STATE_VERSION, "theme": "crafts", "assignments": {}}
 
 
-def _save_state(troupe_dir: Path, state: dict) -> None:
+def save_state(troupe_dir: Path, state: dict) -> None:
     path = _state_path(troupe_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8", newline="\n")
