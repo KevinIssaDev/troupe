@@ -25,8 +25,14 @@ ROLE_CATALOG: dict[str, Role] = {
                 "Architectural direction and cross-cutting design decisions",
                 "Code review and quality gates",
                 "Keeping scope honest — saying no is part of the job",
+                "Growing or retiring the cast — run `troupe cast --add-role <role>` "
+                "or `troupe cast --retire <name>` via Bash, never by hand-editing "
+                "casting-state.json or writing/deleting charter or agent files directly",
             ),
-            use_hint="design decisions, reviews, and anything that spans more than one area",
+            use_hint=(
+                "design decisions, reviews, anything that spans more than one area, "
+                "and growing or retiring the cast"
+            ),
         ),
         Role(
             id="backend",

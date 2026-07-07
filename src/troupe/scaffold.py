@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from importlib.resources import files
 from pathlib import Path
 from string import Template
@@ -31,6 +31,7 @@ from troupe.discovery.profile import (
     render_project_summary,
 )
 from troupe.governance.wiring import HOOK_SCRIPTS, merge_hooks_into_settings
+from troupe.governance.writes import append_decision_entry, backup_and_write
 
 DEFAULT_ROLES = ("lead", "backend", "frontend", "tester")
 STATE_VERSION = 1
@@ -80,7 +81,10 @@ def scaffold(
     result.cast_existing = existing
 
     missing = _missing_requests(requested, [m.role for m in existing])
-    taken = {m.slug for m in existing}
+    # Every slug ever recorded, not just active ones — allocate() promises
+    # a name is "never reallocated, even for retired members," so retired
+    # slugs must stay in the taken set too.
+    taken = set(state["assignments"].keys())
     new_members = [
         replace(member, charter=charter)
         if charter is not None and charter != resolve_role(role_id)
@@ -154,6 +158,11 @@ def scaffold(
         .read_text(encoding="utf-8"),
         result,
     )
+    _write_if_missing(
+        root / ".claude" / "commands" / "troupe-cast.md",
+        files("troupe.templates").joinpath("commands/troupe-cast.md").read_text(encoding="utf-8"),
+        result,
+    )
     _wire_settings(root / ".claude" / "settings.json", result)
 
     if plan is not None:
@@ -173,9 +182,11 @@ def preview_cast(root: Path, role_ids: list[str]) -> tuple[list[CastMember], lis
     writes nothing — allocation is deterministic, so the preview matches the
     later scaffold exactly."""
     troupe_dir = root.resolve() / ".troupe"
-    existing = members_from_state(load_state(troupe_dir))
+    state = load_state(troupe_dir)
+    existing = members_from_state(state)
     missing = _missing_requests([(r, None) for r in role_ids], [m.role for m in existing])
-    new_members = allocate([role_id for role_id, _ in missing], {m.slug for m in existing})
+    taken = set(state["assignments"].keys())
+    new_members = allocate([role_id for role_id, _ in missing], taken)
     return existing, new_members
 
 
@@ -305,27 +316,127 @@ def _wire_settings(path: Path, result: ScaffoldResult) -> None:
 
 
 def _sync_team_md(path: Path, result: ScaffoldResult, project_section: str = "") -> None:
-    table = _cast_table(result.cast)
     if not path.exists():
         content = Template(_shared_template("team.md")).substitute(
-            cast_table=table, project_section=project_section
+            cast_table=_cast_table(result.cast), project_section=project_section
         )
         _write_if_missing(path, content, result)
         return
     if not result.cast_added:
         result.skipped.append(path)
         return
-    # Regenerate only the roster table inside the existing "## Cast" section,
-    # leaving everything the user wrote around it untouched.
+    if _rewrite_cast_table(path, result.cast):
+        result.created.append(path)
+    else:
+        result.skipped.append(path)
+
+
+def _rewrite_cast_table(path: Path, active_members: list[CastMember]) -> bool:
+    """Regenerate only the roster table inside the existing "## Cast" section
+    of team.md, leaving everything the user wrote around it untouched.
+    Returns whether a write happened (False if the file or the "## Cast"
+    marker is missing). Renders whatever `active_members` is given — callers
+    that want a retired member's row dropped pass an active-only list."""
+    if not path.exists():
+        return False
     text = path.read_text(encoding="utf-8")
     marker = "## Cast"
     start = text.find(marker)
     if start == -1:
-        result.skipped.append(path)
-        return
+        return False
+    table = _cast_table(active_members)
     section_body_start = start + len(marker)
     next_section = text.find("\n## ", section_body_start)
     tail = text[next_section:] if next_section != -1 else ""
     updated = text[:section_body_start] + "\n\n" + table + "\n" + tail
     path.write_text(updated, encoding="utf-8", newline="\n")
-    result.created.append(path)
+    return True
+
+
+# ── retire ───────────────────────────────────────────────────────────
+
+
+@dataclass
+class RetireResult:
+    root: Path
+    retired: list[CastMember] = field(default_factory=list)
+    not_found: list[str] = field(default_factory=list)
+    already_retired: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def retire_members(root: Path, names: list[str]) -> RetireResult:
+    """Archive one or more active cast members: casting-state.json's
+    assignment `status` flips to "retired" with a `retiredAt` timestamp
+    (additive; STATE_VERSION stays 1), the compiled `.claude/agents/{slug}.md`
+    is deleted so nothing can spawn them, and team.md's `## Cast` table drops
+    their row. `charter.md`/`history.md` are never touched — this function
+    has no code path that opens either file."""
+    root = root.resolve()
+    troupe_dir = root / ".troupe"
+    state = load_state(troupe_dir)
+    result = RetireResult(root=root)
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+
+    for raw_name in names:
+        slug = raw_name.strip().lower()
+        record = state["assignments"].get(slug)
+        if record is None:
+            result.not_found.append(raw_name)
+            continue
+        if record.get("status") != "active":
+            result.already_retired.append(raw_name)
+            continue
+        record["status"] = "retired"
+        record["retiredAt"] = now
+        (root / ".claude" / "agents" / f"{slug}.md").unlink(missing_ok=True)
+        result.retired.append(
+            CastMember(
+                entry=PoolEntry(name=record["name"], craft=record.get("craft", ""), affinities=()),
+                role=record["role"],
+                charter=_charter_from_record(record),
+            )
+        )
+
+    if result.retired:
+        remaining_roles = {
+            r["role"] for r in state["assignments"].values() if r.get("status") == "active"
+        }
+        for member in result.retired:
+            if member.role not in remaining_roles:
+                title = member.effective_role().title
+                result.warnings.append(f"no active {title.lower()} remains after this change")
+
+        backup_and_write(_state_path(troupe_dir), json.dumps(state, indent=2) + "\n")
+        _rewrite_cast_table(troupe_dir / "team.md", members_from_state(state))
+
+    return result
+
+
+def log_recast_decision(
+    troupe_dir: Path,
+    retired: list[CastMember],
+    added: list[CastMember],
+    reason: str | None,
+) -> None:
+    """Append one `.troupe/decisions.md` entry summarizing a `troupe cast`
+    run, attributed to the CLI itself (never a human name — this is the
+    sanctioned, CLI-mediated path the whole feature exists to provide)."""
+    if not retired and not added:
+        return
+    what_parts = []
+    if retired:
+        what_parts.append("Retired " + ", ".join(f"{m.name} ({m.role})" for m in retired) + ".")
+    if added:
+        what_parts.append(
+            "Cast " + ", ".join(f"{m.name} ({m.effective_role().title})" for m in added) + "."
+        )
+    why = reason.strip() if reason and reason.strip() else "No reason given (--reason not passed)."
+    append_decision_entry(
+        troupe_dir,
+        date=date.today().isoformat(),
+        title="Cast change via `troupe cast`",
+        by="troupe cast (CLI)",
+        what=" ".join(what_parts),
+        why=why,
+    )

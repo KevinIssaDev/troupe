@@ -1,7 +1,7 @@
 """Troupe CLI entry point.
 
-Subcommands (init, doctor, upgrade, watch) register on `app` as they are
-implemented in `troupe.commands`.
+Subcommands (init, doctor, upgrade, watch, cast) register on `app` as they
+are implemented in `troupe.commands`.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import typer
 
 from troupe import __version__
+from troupe.commands.cast import cast
 from troupe.commands.doctor import doctor
 from troupe.commands.init import init
 from troupe.commands.upgrade import upgrade
@@ -25,6 +26,7 @@ app.command()(init)
 app.command()(doctor)
 app.command()(upgrade)
 app.command()(watch)
+app.command()(cast)
 
 
 def _version_callback(value: bool) -> None:
