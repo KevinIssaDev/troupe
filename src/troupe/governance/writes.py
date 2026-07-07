@@ -2,12 +2,11 @@
 state directly — bypassing the file-guard hook by construction, since these
 writes are plain `Path` I/O from the `troupe` CLI process, never a Claude
 Code tool call (`troupe_file_guard.py`'s `PreToolUse` registration only ever
-sees `Write`/`Edit`/`NotebookEdit` calls from a live session; see
-docs/design/cast-recast-retire.md's "Security considerations" section).
+sees `Write`/`Edit`/`NotebookEdit` calls from a live session).
 
-Used by `troupe cast`'s retire path (`scaffold.py`) today. The not-yet-built
-`troupe charter` command (docs/design/charter-edit-path.md) is designed to
-reuse both helpers too — deliberately *not* a shared confirm gate, since
+Used by `troupe cast`'s retire path (`scaffold.py`) today. A not-yet-built
+`troupe charter` command is expected to reuse both helpers too — deliberately
+*not* a shared confirm gate, since
 `cast`'s explicit-input flags skip confirmation by design while `charter`'s
 freeform-prose inputs need a preview first. Also deliberately not shared
 with `troupe_decision_log.py` (the `TaskCompleted` hook), which stays
