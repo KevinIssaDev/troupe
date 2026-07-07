@@ -313,6 +313,16 @@ def render_diff(edit: CharterEdit) -> str:
 
 
 def proposal_path(root: Path, slug: str) -> Path:
+    """The one choke point every proposal file operation (stage/load/discard/
+    list) funnels through. `slug` ultimately comes from the CLI's NAME
+    argument (lowercased), which is not roster-validated before some callers
+    reach here (`--reject` discards before `prepare_edit` runs) — so a slug
+    containing path separators or `..` must be rejected here rather than
+    trusted, or it becomes a path-traversal write/read/delete rooted outside
+    `.troupe/proposals/` (confirmed: enough `../` segments in NAME reach
+    arbitrary paths on disk)."""
+    if not slug or "/" in slug or "\\" in slug or ".." in slug:
+        raise CharterEditError(f"'{slug}' is not a valid cast member slug")
     return root.resolve() / ".troupe" / "proposals" / f"charter-{slug}.json"
 
 

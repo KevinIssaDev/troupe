@@ -366,6 +366,46 @@ def test_retired_member_exits_1(project: Path) -> None:
     assert "retired" in result.output
 
 
+def test_member_retired_between_stage_and_approve_exits_1_proposal_kept(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("mason", str(project), "--title", "Platform Core")  # stages (non-TTY)
+    retire_members(project, ["mason"])
+    fake_tty(monkeypatch)
+
+    result = invoke("mason", str(project), "--approve")
+
+    assert result.exit_code == 1
+    assert "retired" in result.output
+    assert proposal_of(project).exists()  # not silently discarded
+
+
+def test_name_with_path_separators_rejected_before_touching_disk(project: Path) -> None:
+    """NAME feeds a proposal filename (`charter-{slug}.json`); a traversal
+    NAME must not be able to write/read/delete outside .troupe/proposals/."""
+    outside_marker = project.parent / "outside-marker.json"
+    if outside_marker.exists():
+        outside_marker.unlink()
+
+    result = invoke("../../outside-marker", str(project), "--title", "X")
+
+    assert result.exit_code == 1
+    assert not outside_marker.exists()
+    # A field edit is roster-validated (prepare_edit) before any proposal
+    # path is ever constructed, so this fails at "unknown member" rather
+    # than reaching proposal_path()'s own guard — the traversal-specific
+    # guard is exercised below via --reject, which has no such pre-check.
+    assert "no cast member named" in result.output
+
+
+def test_reject_with_traversal_name_rejected_not_unlinked(project: Path) -> None:
+    # --reject calls discard_proposal directly, ahead of any roster check —
+    # the traversal guard must live in proposal_path() itself.
+    result = invoke("..\\..\\evil", str(project), "--reject")
+    assert result.exit_code == 1
+    assert "not a valid cast member slug" in result.output
+
+
 def test_no_field_flags_exits_2(project: Path) -> None:
     result = invoke("mason", str(project))
     assert result.exit_code == 2
@@ -406,6 +446,40 @@ def test_missing_ownership_anchor_aborts_with_zero_writes(
     assert snapshot(project) == before
     assert not (project / ".troupe" / "casting-state.json.bak").exists()
     assert not charter_path.with_name("charter.md.bak").exists()
+
+
+def test_missing_charter_file_entirely_exits_1_with_zero_writes(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_tty(monkeypatch)
+    charter_of(project).unlink()
+    before_state = state_of(project)
+
+    result = invoke("mason", str(project), "--title", "Platform Core", input="y\n")
+
+    assert result.exit_code == 1
+    assert "does not exist" in result.output
+    assert state_of(project) == before_state
+
+
+def test_crlf_charter_survives_anchor_rewrite(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows scaffolds/hand edits may leave CRLF line endings. Python's
+    text-mode read normalizes CRLF to \\n on read (and backup_and_write
+    always writes \\n), so the anchor rewrite itself must still succeed —
+    pinning that the whole file doesn't get silently dropped or mangled."""
+    fake_tty(monkeypatch)
+    charter_path = charter_of(project)
+    crlf_text = charter_path.read_text(encoding="utf-8").replace("\n", "\r\n")
+    charter_path.write_bytes(crlf_text.encode("utf-8"))
+
+    result = invoke("mason", str(project), "--title", "Platform Core", input="y\n")
+
+    assert result.exit_code == 0, result.output
+    text = charter_path.read_text(encoding="utf-8")
+    assert "# Mason — Platform Core" in text
+    assert "## Working agreements" in text
 
 
 def test_missing_heading_anchor_aborts_title_change(
