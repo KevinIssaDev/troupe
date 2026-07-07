@@ -104,6 +104,29 @@ def test_guard_survives_malformed_payload(project: Path) -> None:
     assert proc.returncode == 0
 
 
+def test_guard_fails_closed_on_unexpected_internal_error(project: Path) -> None:
+    # Valid JSON (passes the `json.load` guard) that isn't a dict — e.g. a
+    # bare JSON array — reaches past that guard and blows up on the first
+    # `payload.get(...)` call inside `project_root`/`target_path` with an
+    # AttributeError, deterministically simulating an "unexpected internal
+    # error" the top-level handler must catch. Unlike the malformed-JSON
+    # case (deliberately handled, exits 0), this is a security control: an
+    # unhandled crash must fail *closed* (exit 2, block the write), not
+    # silently default to allowing it.
+    script = project / ".claude" / "hooks" / "troupe_file_guard.py"
+    proc = subprocess.run(
+        [sys.executable, str(script)],
+        input="[1, 2, 3]",
+        capture_output=True,
+        text=True,
+        env={**os.environ, "CLAUDE_PROJECT_DIR": str(project)},
+        timeout=30,
+    )
+    assert proc.returncode == 2
+    assert "unexpected error" in proc.stderr
+    assert "Traceback" not in proc.stderr
+
+
 # ── decision logger ──────────────────────────────────────────────────
 
 
