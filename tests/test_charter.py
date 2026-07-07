@@ -190,6 +190,26 @@ def test_use_hint_only_edit_skips_charter_md(
     assert "Use for platform work." in agent_def_of(project).read_text(encoding="utf-8")
 
 
+def test_non_interactive_mutating_edit_hits_abort_exit_2_with_zero_writes(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate-matrix proof: a TTY that lies (isatty() True, as observed
+    live under this harness) but hits EOF at the confirm prompt (no input=
+    supplied) must Abort -> exit 2 for a genuine, field-changing edit — never
+    silently apply, and never fall back to staging a proposal instead. This
+    is the single most safety-critical path in the whole feature."""
+    fake_tty(monkeypatch)
+    before = snapshot(project)
+
+    result = invoke("mason", str(project), "--title", "Platform Core")  # no input=
+
+    assert result.exit_code == 2
+    assert snapshot(project) == before
+    assert not proposal_of(project).exists()
+    assert not (project / ".troupe" / "casting-state.json.bak").exists()
+    assert not charter_of(project).with_name("charter.md.bak").exists()
+
+
 def test_no_op_edit_short_circuits_without_prompting(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
