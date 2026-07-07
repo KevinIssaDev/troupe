@@ -370,6 +370,241 @@ def test_list_with_nothing_pending_says_so(project: Path) -> None:
     assert "No pending charter proposals." in result.output
 
 
+# ── --approve-all ────────────────────────────────────────────────────
+#
+# `--approve-all` is mutually exclusive with NAME, and with a lone positional
+# `NAME [PATH]` a bare positional always binds to NAME (see the `--list`
+# NAME-less note above) — so, like the NAME-less `--list` form, these tests
+# run against the cwd via `monkeypatch.chdir`.
+
+
+def test_approve_all_applies_every_proposal_with_one_combined_decision_entry(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("mason", str(project), "--title", "Platform Core")
+    invoke("sawyer", str(project), "--use-hint", "breaking things")
+    fake_tty(monkeypatch)
+    monkeypatch.chdir(project)
+
+    result = invoke("--approve-all", input="y\n")
+
+    assert result.exit_code == 0, result.output
+    assert state_of(project)["assignments"]["mason"]["charter"]["title"] == "Platform Core"
+    assert state_of(project)["assignments"]["sawyer"]["charter"]["use_hint"] == "breaking things"
+    assert "# Mason — Platform Core" in charter_of(project, "mason").read_text(encoding="utf-8")
+    assert "Platform Core" in agent_def_of(project, "mason").read_text(encoding="utf-8")
+    assert "Use for breaking things." in agent_def_of(project, "sawyer").read_text(encoding="utf-8")
+    team = (project / ".troupe" / "team.md").read_text(encoding="utf-8")
+    assert "| Mason | Platform Core |" in team
+    assert not proposal_of(project, "mason").exists()
+    assert not proposal_of(project, "sawyer").exists()
+
+    decisions = (project / ".troupe" / "decisions.md").read_text(encoding="utf-8")
+    assert decisions.count("Batch charter approval via `troupe charter --approve-all`") == 1
+    assert "Mason" in decisions
+    assert "Sawyer" in decisions
+    # only ONE combined entry, not one per member.
+    assert decisions.count("**By:** troupe charter (CLI)") == 1
+
+
+def test_approve_all_shows_one_combined_diff_with_headers_per_member(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("mason", str(project), "--title", "Platform Core")
+    invoke("sawyer", str(project), "--title", "Chief Tester")
+    fake_tty(monkeypatch)
+    monkeypatch.chdir(project)
+
+    result = invoke("--approve-all", input="n\n")
+
+    assert result.exit_code == 0, result.output
+    assert "=== mason ===" in result.output
+    assert "=== sawyer ===" in result.output
+    assert "-# Mason — Backend" in result.output
+    assert "+# Mason — Platform Core" in result.output
+    assert "-# Sawyer — Tester" in result.output
+    assert "+# Sawyer — Chief Tester" in result.output
+
+
+def _hand_apply_charter_title(project: Path, slug: str, role_id: str, title: str) -> None:
+    """Simulate drift: mutate casting-state.json directly (as if hand-applied
+    or applied through some other channel) so a still-staged proposal
+    requesting the same title now computes as a no-op. A no-op proposal can
+    never arise directly from staging (prepare_edit's no-op short-circuit
+    runs before staging), so this is the only way to construct one."""
+    from troupe.casting.roles import resolve_role
+
+    state = state_of(project)
+    base = resolve_role(role_id)
+    state["assignments"][slug]["charter"] = {
+        "title": title,
+        "expertise": base.expertise,
+        "ownership": list(base.ownership),
+        "use_hint": base.use_hint,
+    }
+    (project / ".troupe" / "casting-state.json").write_text(
+        json.dumps(state, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def test_approve_all_drops_no_op_proposal_but_still_applies_the_rest(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("mason", str(project), "--title", "Platform Core")
+    invoke("sawyer", str(project), "--title", "Chief Tester")
+    _hand_apply_charter_title(project, "sawyer", "tester", "Chief Tester")
+    fake_tty(monkeypatch)
+    monkeypatch.chdir(project)
+
+    result = invoke("--approve-all", input="y\n")
+
+    assert result.exit_code == 0, result.output
+    assert "1 to apply, 1 already matched (discarded)." in result.output
+    assert state_of(project)["assignments"]["mason"]["charter"]["title"] == "Platform Core"
+    assert not proposal_of(project, "mason").exists()
+    assert not proposal_of(project, "sawyer").exists()  # discarded as a no-op too
+    # the no-op member never shows up in the confirm prompt's member count.
+    assert "Apply 1 charter change(s) for 1 member(s)?" in result.output
+
+
+def test_approve_all_all_no_op_discards_everything_without_confirm(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("mason", str(project), "--title", "Platform Core")
+    _hand_apply_charter_title(project, "mason", "backend", "Platform Core")
+    fake_tty(monkeypatch)
+    monkeypatch.chdir(project)
+
+    result = invoke("--approve-all")  # no input= needed: no confirm prompt reached
+
+    assert result.exit_code == 0, result.output
+    assert "0 to apply, 1 already matched (discarded)." in result.output
+    assert not proposal_of(project, "mason").exists()
+
+
+def test_approve_all_aborts_whole_batch_on_retired_member_zero_writes(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("mason", str(project), "--title", "Platform Core")
+    invoke("webster", str(project), "--title", "Frontend Lead")
+    retire_members(project, ["webster"])
+    before = snapshot(project)
+    fake_tty(monkeypatch)
+    monkeypatch.chdir(project)
+
+    result = invoke("--approve-all")
+
+    assert result.exit_code == 1
+    assert "webster" in result.output
+    assert "retired" in result.output
+    assert snapshot(project) == before  # not even mason's valid proposal applied
+    assert proposal_of(project, "mason").exists()
+    assert proposal_of(project, "webster").exists()
+    assert state_of(project)["assignments"]["mason"].get("charter") is None
+    assert not agent_def_of(project, "webster").exists()  # retire already deleted it; still gone
+
+
+def test_approve_all_aborts_whole_batch_on_missing_anchor_zero_writes(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("mason", str(project), "--title", "Platform Core")
+    invoke("sawyer", str(project), "--title", "Chief Tester")
+    sawyer_charter = charter_of(project, "sawyer")
+    sawyer_charter.write_text(
+        sawyer_charter.read_text(encoding="utf-8").replace("# Sawyer — Tester", "# Renamed"),
+        encoding="utf-8",
+    )
+    before = snapshot(project)
+    fake_tty(monkeypatch)
+    monkeypatch.chdir(project)
+
+    result = invoke("--approve-all")
+
+    assert result.exit_code == 1
+    assert "sawyer" in result.output
+    assert snapshot(project) == before  # not even mason's valid proposal applied
+    assert proposal_of(project, "mason").exists()
+    assert proposal_of(project, "sawyer").exists()
+    assert state_of(project)["assignments"]["mason"].get("charter") is None
+
+
+def test_approve_all_aborts_on_tampered_embedded_slug(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("mason", str(project), "--title", "Platform Core")
+    proposal_path = proposal_of(project, "mason")
+    tampered = json.loads(proposal_path.read_text(encoding="utf-8"))
+    tampered["slug"] = "sawyer"
+    proposal_path.write_text(json.dumps(tampered, indent=2) + "\n", encoding="utf-8")
+    before = snapshot(project)
+    fake_tty(monkeypatch)
+    monkeypatch.chdir(project)
+
+    result = invoke("--approve-all")
+
+    assert result.exit_code == 1
+    assert "mason" in result.output
+    assert "sawyer" in result.output
+    assert "tamper" in result.output.lower()
+    assert snapshot(project) == before
+    assert proposal_path.exists()
+
+
+def test_approve_all_declined_keeps_everything_staged(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invoke("mason", str(project), "--title", "Platform Core")
+    invoke("sawyer", str(project), "--use-hint", "breaking things")
+    before = snapshot(project)
+    fake_tty(monkeypatch)
+    monkeypatch.chdir(project)
+
+    result = invoke("--approve-all", input="n\n")
+
+    assert result.exit_code == 0, result.output
+    assert "Nothing written." in result.output
+    assert snapshot(project) == before
+    assert proposal_of(project, "mason").exists()
+    assert proposal_of(project, "sawyer").exists()
+
+
+def test_approve_all_non_tty_exits_2(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    invoke("mason", str(project), "--title", "Platform Core")
+    before = snapshot(project)
+    monkeypatch.chdir(project)
+
+    result = invoke("--approve-all")
+
+    assert result.exit_code == 2
+    assert "human" in result.output
+    assert proposal_of(project, "mason").exists()
+    assert snapshot(project) == before
+
+
+def test_approve_all_with_nothing_pending_exits_1(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_tty(monkeypatch)
+    monkeypatch.chdir(project)
+    result = invoke("--approve-all")
+    assert result.exit_code == 1
+    assert "no pending charter proposals" in result.output
+
+
+def test_approve_all_combined_with_name_exits_2(project: Path) -> None:
+    result = invoke("mason", str(project), "--approve-all")
+    assert result.exit_code == 2
+    assert "--approve-all cannot be combined with NAME" in result.output
+
+
+def test_approve_all_combined_with_another_mode_exits_2(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(project)
+    result = invoke("--approve-all", "--list")
+    assert result.exit_code == 2
+
+
 # ── errors and usage ─────────────────────────────────────────────────
 
 

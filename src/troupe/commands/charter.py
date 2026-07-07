@@ -9,6 +9,15 @@ the `troupe charter NAME --approve` handoff for the human's own terminal.
 a proposal edited after staging is what the human actually reviews),
 requires a TTY, applies, and deletes the proposal.
 
+`--approve-all` applies every pending proposal in one batch: same TTY-only,
+no-bypass gate as `--approve`, and mutually exclusive with NAME (it always
+operates on all pending proposals under PATH). All proposals are validated
+before anything is written — one bad proposal (unknown/retired member,
+missing anchor, or a tampered embedded slug) aborts the whole batch. A
+no-op proposal is dropped from the apply set and discarded, called out
+separately in the summary. On confirm, every applied and no-op proposal is
+discarded and ONE combined decision entry is logged for the batch.
+
 Exit codes follow the house convention: 0 success (including a declined
 confirm), 1 operational failure (unknown/retired member, missing anchor,
 nothing pending), 2 usage error (no field flags, conflicting flags,
@@ -27,10 +36,14 @@ from troupe.charters.editor import (
     CharterEdit,
     CharterEditError,
     CharterFields,
+    NoPendingProposalError,
+    apply_charter_surfaces,
     apply_edit,
     discard_proposal,
     load_proposal,
+    log_batch_decision,
     pending_proposals,
+    prepare_batch,
     prepare_edit,
     render_diff,
     stage_proposal,
@@ -89,6 +102,16 @@ RejectOpt = Annotated[bool, typer.Option("--reject", help="Discard the staged pr
 ListOpt = Annotated[
     bool, typer.Option("--list", help="List pending charter proposals (NAME optional).")
 ]
+ApproveAllOpt = Annotated[
+    bool,
+    typer.Option(
+        "--approve-all",
+        help=(
+            "Apply every pending charter proposal in one batch (requires a human "
+            "terminal; no bypass). Mutually exclusive with NAME."
+        ),
+    ),
+]
 
 
 def charter(
@@ -103,6 +126,7 @@ def charter(
     approve: ApproveOpt = False,
     reject: RejectOpt = False,
     list_pending: ListOpt = False,
+    approve_all: ApproveAllOpt = False,
 ) -> None:
     """Edit a cast member's charter: structured fields, human-gated apply."""
     fields = CharterFields(
@@ -115,7 +139,12 @@ def charter(
 
     modes = [
         flag
-        for flag, on in (("--approve", approve), ("--reject", reject), ("--list", list_pending))
+        for flag, on in (
+            ("--approve", approve),
+            ("--reject", reject),
+            ("--list", list_pending),
+            ("--approve-all", approve_all),
+        )
         if on
     ]
     if len(modes) > 1:
@@ -124,8 +153,14 @@ def charter(
     if modes and (fields.provided() or propose):
         typer.echo(f"{modes[0]} cannot be combined with field flags or --propose.", err=True)
         raise typer.Exit(code=2)
+    if approve_all and name is not None:
+        typer.echo("--approve-all cannot be combined with NAME.", err=True)
+        raise typer.Exit(code=2)
 
     try:
+        if approve_all:
+            _approve_all(root, reason)
+            return
         if list_pending:
             _list(root, name)
             return
@@ -210,6 +245,67 @@ def _approve(root: Path, name: str, slug: str, reason: str | None) -> None:
     discard_proposal(root, slug)
     _echo_applied(edit)
     typer.echo("Proposal applied and removed.")
+
+
+def _approve_all(root: Path, reason: str | None) -> None:
+    if not sys.stdin.isatty():
+        typer.echo(
+            "--approve-all is the human gate - run this in your own terminal, "
+            "not from an agent session.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    batch = prepare_batch(root)
+    if not batch.to_apply and not batch.no_op_slugs:
+        raise NoPendingProposalError("no pending charter proposals")
+
+    if not batch.to_apply:
+        for slug in batch.no_op_slugs:
+            discard_proposal(root, slug)
+        typer.echo(f"0 to apply, {len(batch.no_op_slugs)} already matched (discarded).")
+        return
+
+    to_apply = batch.to_apply
+    members = sorted({edit.member_name for edit in to_apply})
+    with_diff = sum(1 for edit in to_apply if render_diff(edit))
+    summary = f"{len(to_apply)} to apply"
+    if batch.no_op_slugs:
+        summary += f", {len(batch.no_op_slugs)} already matched (discarded)"
+    typer.echo(summary + ".")
+
+    for edit in to_apply:
+        typer.echo(f"=== {edit.slug} ===")
+        diff = render_diff(edit)
+        if diff:
+            typer.echo(diff, nl=False)
+        else:
+            typer.echo("charter.md is unchanged (the use hint is not rendered there).")
+    typer.echo("")
+    typer.echo(
+        "This also recompiles each member's .claude/agents/{slug}.md "
+        "(and team.md rows for title changes)."
+    )
+
+    try:
+        confirmed = typer.confirm(
+            f"Apply {with_diff} charter change(s) for {len(to_apply)} member(s)?"
+        )
+    except typer.Abort:
+        _refuse_non_interactive()
+    if not confirmed:
+        typer.echo("Nothing written. Proposals are kept untouched.")
+        raise typer.Exit(code=0)
+
+    for edit in to_apply:
+        apply_charter_surfaces(edit)
+    log_batch_decision(root / ".troupe", to_apply, reason)
+    for edit in to_apply:
+        discard_proposal(root, edit.slug)
+    for slug in batch.no_op_slugs:
+        discard_proposal(root, slug)
+
+    typer.echo(f"Applied charter changes for {len(to_apply)} member(s): {', '.join(members)}.")
 
 
 def _confirm_and_apply(edit: CharterEdit, *, reason: str | None, from_proposal: bool) -> None:
