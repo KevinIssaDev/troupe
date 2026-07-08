@@ -1,6 +1,7 @@
 """Tests for `troupe doctor` and `troupe upgrade`."""
 
 import json
+from importlib.resources import files
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -110,6 +111,23 @@ def test_upgrade_restores_stale_troupe_explore_command(project: Path) -> None:
     result = upgrade(project)
 
     assert command.read_text(encoding="utf-8") == original
+    assert command in result.refreshed
+
+
+def test_upgrade_adds_missing_troupe_setup_command(project: Path) -> None:
+    """A repo scaffolded before /troupe-setup existed is missing the file
+    entirely; `troupe upgrade` must add it, byte-identical to the packaged
+    template."""
+    command = project / ".claude" / "commands" / "troupe-setup.md"
+    command.unlink()
+
+    result = upgrade(project)
+
+    template = (
+        files("troupe.templates").joinpath("commands/troupe-setup.md").read_text(encoding="utf-8")
+    )
+    assert command.is_file()
+    assert command.read_text(encoding="utf-8") == template
     assert command in result.refreshed
 
 
