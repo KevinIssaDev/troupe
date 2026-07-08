@@ -78,7 +78,13 @@ def _check_cast(root: Path, troupe_dir: Path) -> list[Check]:
     except (ValueError, KeyError) as exc:
         return [Check("fail", "casting state", f"casting-state.json unreadable: {exc}")]
     if not members:
-        return [Check("warn", "cast", "no active members - run `troupe init` to cast a team")]
+        return [
+            Check(
+                "warn",
+                "cast",
+                "no active members - run /troupe-setup in Claude Code to cast a team",
+            )
+        ]
 
     checks = [Check("ok", "cast", f"{len(members)} active member(s)")]
     broken: list[str] = []

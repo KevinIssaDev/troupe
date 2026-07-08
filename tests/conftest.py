@@ -17,7 +17,7 @@ from troupe.scaffold import scaffold
 
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
-    scaffold(tmp_path)
+    scaffold(tmp_path, roles=["lead", "backend", "frontend", "tester"])
     return tmp_path
 
 

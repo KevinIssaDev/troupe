@@ -1,6 +1,7 @@
 """Tests for `troupe doctor` and `troupe upgrade`."""
 
 import json
+from importlib.resources import files
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -63,6 +64,27 @@ def test_doctor_fails_on_missing_cast_files(project: Path) -> None:
     assert statuses(project)["cast files"] == "fail"
 
 
+def test_doctor_on_freshly_scaffolded_cast_less_repo_warns_with_current_guidance(
+    tmp_path: Path,
+) -> None:
+    """`troupe init` now always casts nobody, so a fresh scaffold's only
+    doctor finding should be the zero-member warning - and it must point at
+    /troupe-setup (the only way to cast a team now), not the stale
+    `troupe init` advice from before init stopped casting."""
+    result = runner.invoke(app, ["init", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+
+    checks = run_checks(tmp_path)
+    cast_check = next(c for c in checks if c.name == "cast")
+    assert cast_check.status == "warn"
+    assert "/troupe-setup" in cast_check.detail
+    assert "run `troupe init`" not in cast_check.detail
+
+    doctor_result = runner.invoke(app, ["doctor", str(tmp_path)])
+    assert doctor_result.exit_code == 0, doctor_result.output
+    assert "1 warning(s)" in doctor_result.output
+
+
 # ── upgrade ──────────────────────────────────────────────────────────
 
 
@@ -110,6 +132,23 @@ def test_upgrade_restores_stale_troupe_explore_command(project: Path) -> None:
     result = upgrade(project)
 
     assert command.read_text(encoding="utf-8") == original
+    assert command in result.refreshed
+
+
+def test_upgrade_adds_missing_troupe_setup_command(project: Path) -> None:
+    """A repo scaffolded before /troupe-setup existed is missing the file
+    entirely; `troupe upgrade` must add it, byte-identical to the packaged
+    template."""
+    command = project / ".claude" / "commands" / "troupe-setup.md"
+    command.unlink()
+
+    result = upgrade(project)
+
+    template = (
+        files("troupe.templates").joinpath("commands/troupe-setup.md").read_text(encoding="utf-8")
+    )
+    assert command.is_file()
+    assert command.read_text(encoding="utf-8") == template
     assert command in result.refreshed
 
 

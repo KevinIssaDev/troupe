@@ -4,7 +4,9 @@ Idempotency contract: files that hold user or team state (charters, histories,
 team.md, decisions.md, directives.md, config.json) are never overwritten.
 casting-state.json is rewritten only when new members are cast. Re-running
 init fills gaps and adds newly requested roles; it never renames or removes
-an existing cast member.
+an existing cast member. `roles=[]` (bare `troupe init`'s only mode) scaffolds
+governance with zero cast members; `troupe cast --add-role` grows the roster
+afterward.
 """
 
 from __future__ import annotations
@@ -24,16 +26,9 @@ from troupe.charters.compiler import (
     render_charter,
     render_history,
 )
-from troupe.discovery.advisor import CastingPlan
-from troupe.discovery.profile import (
-    profile_to_json,
-    render_project_context,
-    render_project_summary,
-)
 from troupe.governance.wiring import HOOK_SCRIPTS, merge_hooks_into_settings
 from troupe.governance.writes import append_decision_entry, backup_and_write
 
-DEFAULT_ROLES = ("lead", "backend", "frontend", "tester")
 STATE_VERSION = 1
 
 
@@ -51,28 +46,19 @@ class ScaffoldResult:
         return [*self.cast_existing, *self.cast_added]
 
 
-def scaffold(
-    root: Path, roles: list[str] | None = None, plan: CastingPlan | None = None
-) -> ScaffoldResult:
+def scaffold(root: Path, roles: list[str]) -> ScaffoldResult:
     """Create or complete the troupe scaffold under `root`.
 
-    Two entry paths: a plain `roles` list (generic charters, no project
-    context — today's behavior verbatim) or a scan-derived `plan` (specialized
-    charters persisted into casting-state, project context seeded into
-    charters/histories/team.md, profile.json refreshed). `plan` wins when
-    both are given.
+    `roles` is a list of role ids to cast (generic catalog charters, no
+    project context). An empty list casts nobody — this is `troupe init`'s
+    only mode now; growing the cast afterward is `troupe cast --add-role`'s
+    job.
     """
     root = root.resolve()
     troupe_dir = root / ".troupe"
-    requested: list[tuple[str, Role | None]]
-    if plan is not None:
-        requested = [(proposal.role.id, proposal.role) for proposal in plan.proposals]
-        project_context = render_project_context(plan.profile)
-        project_section = "\n## Project\n\n" + render_project_summary(plan.profile) + "\n"
-    else:
-        requested = [(r.strip().lower(), None) for r in (roles or list(DEFAULT_ROLES)) if r.strip()]
-        project_context = ""
-        project_section = ""
+    requested: list[tuple[str, Role | None]] = [
+        (r.strip().lower(), None) for r in roles if r.strip()
+    ]
     result = ScaffoldResult(root=root)
     now = datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -117,16 +103,8 @@ def scaffold(
     # user-edited copy — `troupe upgrade` owns refreshing those).
     for member in result.cast:
         agent_dir = troupe_dir / "agents" / member.slug
-        _write_if_missing(
-            agent_dir / "charter.md",
-            render_charter(member, now, project_context=project_context),
-            result,
-        )
-        _write_if_missing(
-            agent_dir / "history.md",
-            render_history(member, now, project_context=project_context),
-            result,
-        )
+        _write_if_missing(agent_dir / "charter.md", render_charter(member, now), result)
+        _write_if_missing(agent_dir / "history.md", render_history(member, now), result)
         _write_if_missing(
             root / ".claude" / "agents" / f"{member.slug}.md",
             render_agent_definition(member, now),
@@ -142,7 +120,7 @@ def scaffold(
         result,
     )
 
-    _sync_team_md(troupe_dir / "team.md", result, project_section)
+    _sync_team_md(troupe_dir / "team.md", result)
 
     _write_if_missing(troupe_dir / "policy.json", _shared_template("policy.json"), result)
     for script in HOOK_SCRIPTS:
@@ -163,31 +141,20 @@ def scaffold(
         files("troupe.templates").joinpath("commands/troupe-cast.md").read_text(encoding="utf-8"),
         result,
     )
+    _write_if_missing(
+        root / ".claude" / "commands" / "troupe-setup.md",
+        files("troupe.templates").joinpath("commands/troupe-setup.md").read_text(encoding="utf-8"),
+        result,
+    )
     _wire_settings(root / ".claude" / "settings.json", result)
 
-    if plan is not None:
-        # Derived (like compiled agent defs): refreshed on every scan-aware
-        # run, never hand-edited.
-        _refresh_file(troupe_dir / "profile.json", profile_to_json(plan.profile), result)
-
-    if new_members:
+    if new_members or not _state_path(troupe_dir).exists():
+        # Always write on first scaffold, even with zero new members - bare
+        # `troupe init` (roles=[]) must still leave a real, zero-assignment
+        # casting-state.json on disk, not just an in-memory default.
         save_state(troupe_dir, state)
 
     return result
-
-
-def preview_cast(root: Path, role_ids: list[str]) -> tuple[list[CastMember], list[CastMember]]:
-    """Pure preview of what `scaffold` would cast for `role_ids`: (existing
-    active members, members that would be newly allocated). Reads state,
-    writes nothing — allocation is deterministic, so the preview matches the
-    later scaffold exactly."""
-    troupe_dir = root.resolve() / ".troupe"
-    state = load_state(troupe_dir)
-    existing = members_from_state(state)
-    missing = _missing_requests([(r, None) for r in role_ids], [m.role for m in existing])
-    taken = set(state["assignments"].keys())
-    new_members = allocate([role_id for role_id, _ in missing], taken)
-    return existing, new_members
 
 
 # ── state ────────────────────────────────────────────────────────────
@@ -274,18 +241,6 @@ def _write_if_missing(path: Path, content: str, result: ScaffoldResult) -> None:
     result.created.append(path)
 
 
-def _refresh_file(path: Path, content: str, result: ScaffoldResult) -> None:
-    """Write a derived file, overwriting stale content (unlike state files,
-    which go through `_write_if_missing`)."""
-    existed = path.exists()
-    if existed and path.read_text(encoding="utf-8") == content:
-        result.skipped.append(path)
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8", newline="\n")
-    (result.updated if existed else result.created).append(path)
-
-
 def _cast_table(cast: list[CastMember]) -> str:
     lines = [
         "| Name | Role | Charter | Status |",
@@ -315,10 +270,10 @@ def _wire_settings(path: Path, result: ScaffoldResult) -> None:
     (result.updated if existed else result.created).append(path)
 
 
-def _sync_team_md(path: Path, result: ScaffoldResult, project_section: str = "") -> None:
+def _sync_team_md(path: Path, result: ScaffoldResult) -> None:
     if not path.exists():
         content = Template(_shared_template("team.md")).substitute(
-            cast_table=_cast_table(result.cast), project_section=project_section
+            cast_table=_cast_table(result.cast), project_section=""
         )
         _write_if_missing(path, content, result)
         return
