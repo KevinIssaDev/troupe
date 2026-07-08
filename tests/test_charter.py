@@ -1,22 +1,15 @@
-"""Tests for `troupe charter` — structured charter edits with a
-proposal/approve human gate (design: decisions.md 2026-07-07).
-
-TTY-vs-non-TTY: CliRunner's stdin is not a TTY, so the staging path is the
-default; TTY flows fake `sys.stdin.isatty()` on the command module exactly
-like test_init.py's `fake_tty` and read the confirm answer from CliRunner's
-injected input.
-"""
+"""Tests for `troupe charter` — structured, fully ungated charter edits
+(design: decisions.md 2026-07-08, superseding the phase-1 propose/stage/
+--approve gate). Same trust model as `troupe cast`: no TTY check, no
+confirm prompt — a field edit is validated then applied immediately."""
 
 from __future__ import annotations
 
 import json
-import types
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
-import troupe.commands.charter as charter_command
 from troupe.cli import app
 from troupe.scaffold import retire_members
 from troupe.upgrade import upgrade
@@ -24,16 +17,8 @@ from troupe.upgrade import upgrade
 runner = CliRunner()
 
 
-def fake_tty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        charter_command,
-        "sys",
-        types.SimpleNamespace(stdin=types.SimpleNamespace(isatty=lambda: True)),
-    )
-
-
-def invoke(*args: str, input: str | None = None):
-    return runner.invoke(app, ["charter", *args], input=input)
+def invoke(*args: str):
+    return runner.invoke(app, ["charter", *args])
 
 
 def state_of(project: Path) -> dict:
@@ -48,10 +33,6 @@ def agent_def_of(project: Path, slug: str = "mason") -> Path:
     return project / ".claude" / "agents" / f"{slug}.md"
 
 
-def proposal_of(project: Path, slug: str = "mason") -> Path:
-    return project / ".troupe" / "proposals" / f"charter-{slug}.json"
-
-
 def snapshot(project: Path) -> dict[str, str]:
     return {
         "state": (project / ".troupe" / "casting-state.json").read_text(encoding="utf-8"),
@@ -62,13 +43,10 @@ def snapshot(project: Path) -> dict[str, str]:
     }
 
 
-# ── TTY apply ────────────────────────────────────────────────────────
+# ── apply ────────────────────────────────────────────────────────────
 
 
-def test_tty_apply_updates_all_four_surfaces(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
+def test_apply_updates_all_four_surfaces(project: Path) -> None:
     # Hand-written prose outside the anchors must survive the surgical rewrite.
     charter_path = charter_of(project)
     charter_path.write_text(
@@ -91,7 +69,6 @@ def test_tty_apply_updates_all_four_surfaces(
         "core work",
         "--reason",
         "specialize mason",
-        input="y\n",
     )
     assert result.exit_code == 0, result.output
 
@@ -133,38 +110,16 @@ def test_tty_apply_updates_all_four_surfaces(
     assert charter_path.with_name("charter.md.bak").exists()
 
 
-def test_tty_apply_shows_diff_and_recompile_note(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
-    result = invoke("mason", str(project), "--title", "Platform Core", input="y\n")
+def test_apply_prints_what_changed(project: Path) -> None:
+    result = invoke("mason", str(project), "--title", "Platform Core")
     assert result.exit_code == 0, result.output
-    assert "-# Mason — Backend" in result.output
-    assert "+# Mason — Platform Core" in result.output
+    assert "Updated Mason's charter." in result.output
     assert ".claude/agents/mason.md" in result.output
     assert "team.md" in result.output
 
 
-def test_tty_declined_confirm_writes_nothing(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
-    before = snapshot(project)
-
-    result = invoke("mason", str(project), "--title", "Platform Core", input="n\n")
-
-    assert result.exit_code == 0, result.output
-    assert "Nothing written." in result.output
-    assert snapshot(project) == before
-    assert not (project / ".troupe" / "casting-state.json.bak").exists()
-    assert not proposal_of(project).exists()
-
-
-def test_title_only_change_rewrites_team_row_and_keeps_others(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
-    result = invoke("mason", str(project), "--title", "Platform Core", input="y\n")
+def test_title_only_change_rewrites_team_row_and_keeps_others(project: Path) -> None:
+    result = invoke("mason", str(project), "--title", "Platform Core")
     assert result.exit_code == 0, result.output
     team = (project / ".troupe" / "team.md").read_text(encoding="utf-8")
     assert "| Mason | Platform Core |" in team
@@ -172,16 +127,12 @@ def test_title_only_change_rewrites_team_row_and_keeps_others(
     assert "| Sawyer | Tester |" in team
 
 
-def test_use_hint_only_edit_skips_charter_md(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
+def test_use_hint_only_edit_skips_charter_md(project: Path) -> None:
     charter_before = charter_of(project).read_text(encoding="utf-8")
 
-    result = invoke("mason", str(project), "--use-hint", "platform work", input="y\n")
+    result = invoke("mason", str(project), "--use-hint", "platform work")
 
     assert result.exit_code == 0, result.output
-    assert "use hint is not rendered" in result.output
     assert charter_of(project).read_text(encoding="utf-8") == charter_before
     assert not charter_of(project).with_name("charter.md.bak").exists()
     record = state_of(project)["assignments"]["mason"]["charter"]
@@ -190,419 +141,12 @@ def test_use_hint_only_edit_skips_charter_md(
     assert "Use for platform work." in agent_def_of(project).read_text(encoding="utf-8")
 
 
-def test_non_interactive_mutating_edit_hits_abort_exit_2_with_zero_writes(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The gate-matrix proof: a TTY that lies (isatty() True, as observed
-    live under this harness) but hits EOF at the confirm prompt (no input=
-    supplied) must Abort -> exit 2 for a genuine, field-changing edit — never
-    silently apply, and never fall back to staging a proposal instead. This
-    is the single most safety-critical path in the whole feature."""
-    fake_tty(monkeypatch)
+def test_no_op_edit_short_circuits(project: Path) -> None:
     before = snapshot(project)
-
-    result = invoke("mason", str(project), "--title", "Platform Core")  # no input=
-
-    assert result.exit_code == 2
-    assert snapshot(project) == before
-    assert not proposal_of(project).exists()
-    assert not (project / ".troupe" / "casting-state.json.bak").exists()
-    assert not charter_of(project).with_name("charter.md.bak").exists()
-
-
-def test_no_op_edit_short_circuits_without_prompting(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
-    before = snapshot(project)
-    # No confirm input is supplied: if the command reached the prompt it
-    # would abort, so exit 0 proves the no-op short-circuit fired first.
     result = invoke("mason", str(project), "--title", "Backend")
     assert result.exit_code == 0, result.output
     assert "nothing to change" in result.output
     assert snapshot(project) == before
-
-
-# ── proposal staging (non-TTY / --propose) ───────────────────────────
-
-
-def test_non_tty_field_edit_stages_proposal_only(project: Path) -> None:
-    before = snapshot(project)
-
-    result = invoke("mason", str(project), "--title", "Platform Core", "--reason", "why not")
-
-    assert result.exit_code == 0, result.output
-    assert snapshot(project) == before  # nothing applied
-    proposal = json.loads(proposal_of(project).read_text(encoding="utf-8"))
-    assert proposal["slug"] == "mason"
-    assert proposal["fields"] == {"title": "Platform Core"}
-    assert proposal["reason"] == "why not"
-    assert proposal["stagedAt"]
-    assert "troupe charter mason" in result.output
-    assert "--approve" in result.output
-
-
-def test_propose_flag_forces_staging_even_on_tty(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
-    before = snapshot(project)
-    result = invoke("mason", str(project), "--title", "Platform Core", "--propose")
-    assert result.exit_code == 0, result.output
-    assert proposal_of(project).exists()
-    assert snapshot(project) == before
-
-
-def test_restaging_overwrites_pending_proposal_with_notice(project: Path) -> None:
-    invoke("mason", str(project), "--title", "First Title")
-    result = invoke("mason", str(project), "--title", "Second Title")
-
-    assert result.exit_code == 0, result.output
-    assert "Replaced" in result.output
-    proposal = json.loads(proposal_of(project).read_text(encoding="utf-8"))
-    assert proposal["fields"] == {"title": "Second Title"}
-
-
-# ── --approve / --reject / --list ────────────────────────────────────
-
-
-def test_approve_non_tty_exits_2_and_keeps_proposal(project: Path) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    before = snapshot(project)
-
-    result = invoke("mason", str(project), "--approve")
-
-    assert result.exit_code == 2
-    assert "human" in result.output
-    assert proposal_of(project).exists()
-    assert snapshot(project) == before
-
-
-def test_approve_applies_deletes_proposal_and_logs(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invoke("mason", str(project), "--title", "Platform Core", "--reason", "staged reason")
-    fake_tty(monkeypatch)
-
-    result = invoke("mason", str(project), "--approve", input="y\n")
-
-    assert result.exit_code == 0, result.output
-    assert not proposal_of(project).exists()
-    assert state_of(project)["assignments"]["mason"]["charter"]["title"] == "Platform Core"
-    assert "# Mason — Platform Core" in charter_of(project).read_text(encoding="utf-8")
-    decisions = (project / ".troupe" / "decisions.md").read_text(encoding="utf-8")
-    assert "staged proposal (propose-then-approve)" in decisions
-    assert "**Why:** staged reason" in decisions
-
-
-def test_approve_renders_diff_from_proposal_file(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The stage-then-tamper closure: whatever the proposal file says at
-    approve time is what the human sees and what gets applied."""
-    invoke("mason", str(project), "--title", "Innocent Title")
-    proposal_path = proposal_of(project)
-    tampered = json.loads(proposal_path.read_text(encoding="utf-8"))
-    tampered["fields"]["title"] = "Tampered Title"
-    proposal_path.write_text(json.dumps(tampered, indent=2) + "\n", encoding="utf-8")
-    fake_tty(monkeypatch)
-
-    result = invoke("mason", str(project), "--approve", input="n\n")
-
-    assert result.exit_code == 0, result.output
-    assert "Tampered Title" in result.output  # the human reviews the tampered value
-    assert "Innocent Title" not in result.output
-
-
-def test_approve_declined_keeps_proposal(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    fake_tty(monkeypatch)
-    before = snapshot(project)
-
-    result = invoke("mason", str(project), "--approve", input="n\n")
-
-    assert result.exit_code == 0, result.output
-    assert proposal_of(project).exists()
-    assert snapshot(project) == before
-
-
-def test_approve_with_nothing_pending_exits_1(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
-    result = invoke("mason", str(project), "--approve")
-    assert result.exit_code == 1
-    assert "no pending charter proposal" in result.output
-
-
-def test_reject_discards_proposal(project: Path) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    result = invoke("mason", str(project), "--reject")
-    assert result.exit_code == 0, result.output
-    assert not proposal_of(project).exists()
-
-
-def test_reject_with_nothing_pending_exits_1(project: Path) -> None:
-    result = invoke("mason", str(project), "--reject")
-    assert result.exit_code == 1
-
-
-def test_list_shows_pending_proposals(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    invoke("sawyer", str(project), "--use-hint", "breaking things")
-
-    result = invoke("mason", str(project), "--list")
-    assert result.exit_code == 0, result.output
-    assert "mason" in result.output
-    assert "sawyer" not in result.output
-    assert "--approve" in result.output
-
-    monkeypatch.chdir(project)  # NAME-less --list runs against the cwd
-    result = invoke("--list")
-    assert result.exit_code == 0, result.output
-    assert "mason" in result.output
-    assert "sawyer" in result.output
-
-
-def test_list_with_nothing_pending_says_so(project: Path) -> None:
-    result = invoke("mason", str(project), "--list")
-    assert result.exit_code == 0, result.output
-    assert "No pending charter proposals." in result.output
-
-
-# ── --approve-all ────────────────────────────────────────────────────
-#
-# `--approve-all` is mutually exclusive with NAME, and with a lone positional
-# `NAME [PATH]` a bare positional always binds to NAME (see the `--list`
-# NAME-less note above) — so, like the NAME-less `--list` form, these tests
-# run against the cwd via `monkeypatch.chdir`.
-
-
-def test_approve_all_applies_every_proposal_with_one_combined_decision_entry(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    invoke("sawyer", str(project), "--use-hint", "breaking things")
-    fake_tty(monkeypatch)
-    monkeypatch.chdir(project)
-
-    result = invoke("--approve-all", input="y\n")
-
-    assert result.exit_code == 0, result.output
-    assert state_of(project)["assignments"]["mason"]["charter"]["title"] == "Platform Core"
-    assert state_of(project)["assignments"]["sawyer"]["charter"]["use_hint"] == "breaking things"
-    assert "# Mason — Platform Core" in charter_of(project, "mason").read_text(encoding="utf-8")
-    assert "Platform Core" in agent_def_of(project, "mason").read_text(encoding="utf-8")
-    assert "Use for breaking things." in agent_def_of(project, "sawyer").read_text(encoding="utf-8")
-    team = (project / ".troupe" / "team.md").read_text(encoding="utf-8")
-    assert "| Mason | Platform Core |" in team
-    assert not proposal_of(project, "mason").exists()
-    assert not proposal_of(project, "sawyer").exists()
-
-    decisions = (project / ".troupe" / "decisions.md").read_text(encoding="utf-8")
-    assert decisions.count("Batch charter approval via `troupe charter --approve-all`") == 1
-    assert "Mason" in decisions
-    assert "Sawyer" in decisions
-    # only ONE combined entry, not one per member.
-    assert decisions.count("**By:** troupe charter (CLI)") == 1
-
-
-def test_approve_all_shows_one_combined_diff_with_headers_per_member(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    invoke("sawyer", str(project), "--title", "Chief Tester")
-    fake_tty(monkeypatch)
-    monkeypatch.chdir(project)
-
-    result = invoke("--approve-all", input="n\n")
-
-    assert result.exit_code == 0, result.output
-    assert "=== mason ===" in result.output
-    assert "=== sawyer ===" in result.output
-    assert "-# Mason — Backend" in result.output
-    assert "+# Mason — Platform Core" in result.output
-    assert "-# Sawyer — Tester" in result.output
-    assert "+# Sawyer — Chief Tester" in result.output
-
-
-def _hand_apply_charter_title(project: Path, slug: str, role_id: str, title: str) -> None:
-    """Simulate drift: mutate casting-state.json directly (as if hand-applied
-    or applied through some other channel) so a still-staged proposal
-    requesting the same title now computes as a no-op. A no-op proposal can
-    never arise directly from staging (prepare_edit's no-op short-circuit
-    runs before staging), so this is the only way to construct one."""
-    from troupe.casting.roles import resolve_role
-
-    state = state_of(project)
-    base = resolve_role(role_id)
-    state["assignments"][slug]["charter"] = {
-        "title": title,
-        "expertise": base.expertise,
-        "ownership": list(base.ownership),
-        "use_hint": base.use_hint,
-    }
-    (project / ".troupe" / "casting-state.json").write_text(
-        json.dumps(state, indent=2) + "\n", encoding="utf-8"
-    )
-
-
-def test_approve_all_drops_no_op_proposal_but_still_applies_the_rest(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    invoke("sawyer", str(project), "--title", "Chief Tester")
-    _hand_apply_charter_title(project, "sawyer", "tester", "Chief Tester")
-    fake_tty(monkeypatch)
-    monkeypatch.chdir(project)
-
-    result = invoke("--approve-all", input="y\n")
-
-    assert result.exit_code == 0, result.output
-    assert "1 to apply, 1 already matched (discarded)." in result.output
-    assert state_of(project)["assignments"]["mason"]["charter"]["title"] == "Platform Core"
-    assert not proposal_of(project, "mason").exists()
-    assert not proposal_of(project, "sawyer").exists()  # discarded as a no-op too
-    # the no-op member never shows up in the confirm prompt's member count.
-    assert "Apply 1 charter change(s) for 1 member(s)?" in result.output
-
-
-def test_approve_all_all_no_op_discards_everything_without_confirm(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    _hand_apply_charter_title(project, "mason", "backend", "Platform Core")
-    fake_tty(monkeypatch)
-    monkeypatch.chdir(project)
-
-    result = invoke("--approve-all")  # no input= needed: no confirm prompt reached
-
-    assert result.exit_code == 0, result.output
-    assert "0 to apply, 1 already matched (discarded)." in result.output
-    assert not proposal_of(project, "mason").exists()
-
-
-def test_approve_all_aborts_whole_batch_on_retired_member_zero_writes(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    invoke("webster", str(project), "--title", "Frontend Lead")
-    retire_members(project, ["webster"])
-    before = snapshot(project)
-    fake_tty(monkeypatch)
-    monkeypatch.chdir(project)
-
-    result = invoke("--approve-all")
-
-    assert result.exit_code == 1
-    assert "webster" in result.output
-    assert "retired" in result.output
-    assert snapshot(project) == before  # not even mason's valid proposal applied
-    assert proposal_of(project, "mason").exists()
-    assert proposal_of(project, "webster").exists()
-    assert state_of(project)["assignments"]["mason"].get("charter") is None
-    assert not agent_def_of(project, "webster").exists()  # retire already deleted it; still gone
-
-
-def test_approve_all_aborts_whole_batch_on_missing_anchor_zero_writes(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    invoke("sawyer", str(project), "--title", "Chief Tester")
-    sawyer_charter = charter_of(project, "sawyer")
-    sawyer_charter.write_text(
-        sawyer_charter.read_text(encoding="utf-8").replace("# Sawyer — Tester", "# Renamed"),
-        encoding="utf-8",
-    )
-    before = snapshot(project)
-    fake_tty(monkeypatch)
-    monkeypatch.chdir(project)
-
-    result = invoke("--approve-all")
-
-    assert result.exit_code == 1
-    assert "sawyer" in result.output
-    assert snapshot(project) == before  # not even mason's valid proposal applied
-    assert proposal_of(project, "mason").exists()
-    assert proposal_of(project, "sawyer").exists()
-    assert state_of(project)["assignments"]["mason"].get("charter") is None
-
-
-def test_approve_all_aborts_on_tampered_embedded_slug(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    proposal_path = proposal_of(project, "mason")
-    tampered = json.loads(proposal_path.read_text(encoding="utf-8"))
-    tampered["slug"] = "sawyer"
-    proposal_path.write_text(json.dumps(tampered, indent=2) + "\n", encoding="utf-8")
-    before = snapshot(project)
-    fake_tty(monkeypatch)
-    monkeypatch.chdir(project)
-
-    result = invoke("--approve-all")
-
-    assert result.exit_code == 1
-    assert "mason" in result.output
-    assert "sawyer" in result.output
-    assert "tamper" in result.output.lower()
-    assert snapshot(project) == before
-    assert proposal_path.exists()
-
-
-def test_approve_all_declined_keeps_everything_staged(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    invoke("sawyer", str(project), "--use-hint", "breaking things")
-    before = snapshot(project)
-    fake_tty(monkeypatch)
-    monkeypatch.chdir(project)
-
-    result = invoke("--approve-all", input="n\n")
-
-    assert result.exit_code == 0, result.output
-    assert "Nothing written." in result.output
-    assert snapshot(project) == before
-    assert proposal_of(project, "mason").exists()
-    assert proposal_of(project, "sawyer").exists()
-
-
-def test_approve_all_non_tty_exits_2(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")
-    before = snapshot(project)
-    monkeypatch.chdir(project)
-
-    result = invoke("--approve-all")
-
-    assert result.exit_code == 2
-    assert "human" in result.output
-    assert proposal_of(project, "mason").exists()
-    assert snapshot(project) == before
-
-
-def test_approve_all_with_nothing_pending_exits_1(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
-    monkeypatch.chdir(project)
-    result = invoke("--approve-all")
-    assert result.exit_code == 1
-    assert "no pending charter proposals" in result.output
-
-
-def test_approve_all_combined_with_name_exits_2(project: Path) -> None:
-    result = invoke("mason", str(project), "--approve-all")
-    assert result.exit_code == 2
-    assert "--approve-all cannot be combined with NAME" in result.output
-
-
-def test_approve_all_combined_with_another_mode_exits_2(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.chdir(project)
-    result = invoke("--approve-all", "--list")
-    assert result.exit_code == 2
 
 
 # ── errors and usage ─────────────────────────────────────────────────
@@ -621,46 +165,6 @@ def test_retired_member_exits_1(project: Path) -> None:
     assert "retired" in result.output
 
 
-def test_member_retired_between_stage_and_approve_exits_1_proposal_kept(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invoke("mason", str(project), "--title", "Platform Core")  # stages (non-TTY)
-    retire_members(project, ["mason"])
-    fake_tty(monkeypatch)
-
-    result = invoke("mason", str(project), "--approve")
-
-    assert result.exit_code == 1
-    assert "retired" in result.output
-    assert proposal_of(project).exists()  # not silently discarded
-
-
-def test_name_with_path_separators_rejected_before_touching_disk(project: Path) -> None:
-    """NAME feeds a proposal filename (`charter-{slug}.json`); a traversal
-    NAME must not be able to write/read/delete outside .troupe/proposals/."""
-    outside_marker = project.parent / "outside-marker.json"
-    if outside_marker.exists():
-        outside_marker.unlink()
-
-    result = invoke("../../outside-marker", str(project), "--title", "X")
-
-    assert result.exit_code == 1
-    assert not outside_marker.exists()
-    # A field edit is roster-validated (prepare_edit) before any proposal
-    # path is ever constructed, so this fails at "unknown member" rather
-    # than reaching proposal_path()'s own guard — the traversal-specific
-    # guard is exercised below via --reject, which has no such pre-check.
-    assert "no cast member named" in result.output
-
-
-def test_reject_with_traversal_name_rejected_not_unlinked(project: Path) -> None:
-    # --reject calls discard_proposal directly, ahead of any roster check —
-    # the traversal guard must live in proposal_path() itself.
-    result = invoke("..\\..\\evil", str(project), "--reject")
-    assert result.exit_code == 1
-    assert "not a valid cast member slug" in result.output
-
-
 def test_no_field_flags_exits_2(project: Path) -> None:
     result = invoke("mason", str(project))
     assert result.exit_code == 2
@@ -668,25 +172,11 @@ def test_no_field_flags_exits_2(project: Path) -> None:
 
 
 def test_missing_name_exits_2(project: Path) -> None:
-    result = invoke("--title", "X")
-    assert result.exit_code == 2
-    assert "Missing cast member name" in result.output
-
-
-def test_approve_cannot_combine_with_field_flags(project: Path) -> None:
-    result = invoke("mason", str(project), "--approve", "--title", "X")
+    result = invoke()
     assert result.exit_code == 2
 
 
-def test_approve_and_reject_are_mutually_exclusive(project: Path) -> None:
-    result = invoke("mason", str(project), "--approve", "--reject")
-    assert result.exit_code == 2
-
-
-def test_missing_ownership_anchor_aborts_with_zero_writes(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
+def test_missing_ownership_anchor_aborts_with_zero_writes(project: Path) -> None:
     charter_path = charter_of(project)
     charter_path.write_text(
         charter_path.read_text(encoding="utf-8").replace("## Ownership", "## Stuff"),
@@ -694,7 +184,7 @@ def test_missing_ownership_anchor_aborts_with_zero_writes(
     )
     before = snapshot(project)
 
-    result = invoke("mason", str(project), "--ownership", "Everything", input="y\n")
+    result = invoke("mason", str(project), "--ownership", "Everything")
 
     assert result.exit_code == 1
     assert "## Ownership" in result.output
@@ -703,33 +193,27 @@ def test_missing_ownership_anchor_aborts_with_zero_writes(
     assert not charter_path.with_name("charter.md.bak").exists()
 
 
-def test_missing_charter_file_entirely_exits_1_with_zero_writes(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
+def test_missing_charter_file_entirely_exits_1_with_zero_writes(project: Path) -> None:
     charter_of(project).unlink()
     before_state = state_of(project)
 
-    result = invoke("mason", str(project), "--title", "Platform Core", input="y\n")
+    result = invoke("mason", str(project), "--title", "Platform Core")
 
     assert result.exit_code == 1
     assert "does not exist" in result.output
     assert state_of(project) == before_state
 
 
-def test_crlf_charter_survives_anchor_rewrite(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_crlf_charter_survives_anchor_rewrite(project: Path) -> None:
     """Windows scaffolds/hand edits may leave CRLF line endings. Python's
     text-mode read normalizes CRLF to \\n on read (and backup_and_write
     always writes \\n), so the anchor rewrite itself must still succeed —
     pinning that the whole file doesn't get silently dropped or mangled."""
-    fake_tty(monkeypatch)
     charter_path = charter_of(project)
     crlf_text = charter_path.read_text(encoding="utf-8").replace("\n", "\r\n")
     charter_path.write_bytes(crlf_text.encode("utf-8"))
 
-    result = invoke("mason", str(project), "--title", "Platform Core", input="y\n")
+    result = invoke("mason", str(project), "--title", "Platform Core")
 
     assert result.exit_code == 0, result.output
     text = charter_path.read_text(encoding="utf-8")
@@ -737,10 +221,7 @@ def test_crlf_charter_survives_anchor_rewrite(
     assert "## Working agreements" in text
 
 
-def test_missing_heading_anchor_aborts_title_change(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_tty(monkeypatch)
+def test_missing_heading_anchor_aborts_title_change(project: Path) -> None:
     charter_path = charter_of(project)
     charter_path.write_text(
         charter_path.read_text(encoding="utf-8").replace("# Mason — Backend", "# Renamed"),
@@ -748,7 +229,7 @@ def test_missing_heading_anchor_aborts_title_change(
     )
     before = snapshot(project)
 
-    result = invoke("mason", str(project), "--title", "Platform Core", input="y\n")
+    result = invoke("mason", str(project), "--title", "Platform Core")
 
     assert result.exit_code == 1
     assert snapshot(project) == before
@@ -757,13 +238,10 @@ def test_missing_heading_anchor_aborts_title_change(
 # ── persistence contract with `troupe upgrade` ───────────────────────
 
 
-def test_upgrade_after_charter_edit_leaves_agent_def_byte_identical(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_upgrade_after_charter_edit_leaves_agent_def_byte_identical(project: Path) -> None:
     """The 0.2.0 persistence contract: because the edit lands in
     casting-state's charter record, upgrade re-renders the exact same
     agent definition instead of reverting it."""
-    fake_tty(monkeypatch)
     result = invoke(
         "mason",
         str(project),
@@ -771,7 +249,6 @@ def test_upgrade_after_charter_edit_leaves_agent_def_byte_identical(
         "Platform Core",
         "--ownership",
         "CLI surface",
-        input="y\n",
     )
     assert result.exit_code == 0, result.output
     agent_def = agent_def_of(project)

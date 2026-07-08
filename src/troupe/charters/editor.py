@@ -13,12 +13,11 @@ every write (including the surgical charter.md rewrite, which touches only
 the anchors of fields that actually changed) before anything is written; a
 missing anchor raises and nothing is touched anywhere.
 
-Proposals: off a TTY, `troupe charter` never applies — it stages a JSON
-proposal at `.troupe/proposals/charter-{slug}.json` (deliberately NOT a
-protected path: agents may stage) that a human later applies from a real
-terminal with `--approve`. The approve path re-renders the diff from the
-proposal file at approve time, so a proposal tampered with after staging is
-what the human actually sees.
+`troupe charter` is fully ungated — same trust model as the already-ungated
+`troupe cast`: a human is present in any interactive session and watches the
+command before it runs, and Claude Code's own Bash permission prompt is the
+real backstop, not a custom staging/approve mechanism (decisions.md
+2026-07-08, superseding the phase-1 propose/stage/--approve gate design).
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ from __future__ import annotations
 import difflib
 import json
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 
 from troupe.casting.registry import CastMember, PoolEntry
@@ -51,10 +50,6 @@ class UnknownMemberError(CharterEditError):
 
 class AnchorMissingError(CharterEditError):
     """charter.md lacks an anchor a changed field needs; nothing was written."""
-
-
-class NoPendingProposalError(CharterEditError):
-    """--approve/--reject with no staged proposal for that member."""
 
 
 @dataclass(frozen=True)
@@ -127,26 +122,19 @@ class CharterEdit:
         return self.new_role.title != self.old_role.title
 
 
-def prepare_edit(
-    root: Path, name: str, fields: CharterFields, state: dict | None = None
-) -> CharterEdit:
+def prepare_edit(root: Path, name: str, fields: CharterFields) -> CharterEdit:
     """Validate the member and compute every write, writing nothing.
 
     Raises UnknownMemberError for a missing or retired member and
     AnchorMissingError when charter.md lacks an anchor a changed field
     needs — in both cases zero files have been touched.
 
-    `state` lets a caller preparing several edits against the SAME
-    casting-state.json (a `--approve-all` batch) share one loaded dict
-    instead of each edit loading its own independent copy — required so
-    sequential `apply_charter_surfaces` writes don't lose each other's
-    changes (each `CharterEdit.state` is written back to disk whole; two
-    independently-loaded copies would make the later write clobber the
-    earlier one). Defaults to loading fresh, the single-edit behavior."""
+    Always loads casting-state.json fresh: every `troupe charter` invocation
+    is its own OS process (there is no in-process batching any more), so
+    there is no shared in-memory state for a later write to clobber."""
     root = root.resolve()
     troupe_dir = root / ".troupe"
-    if state is None:
-        state = load_state(troupe_dir)
+    state = load_state(troupe_dir)
     slug = name.strip().lower()
     record = state["assignments"].get(slug)
     if record is None:
@@ -234,10 +222,8 @@ def _replace_line(lines: list[str], prefix: str, replacement: str, label: str) -
 
 
 def apply_charter_surfaces(edit: CharterEdit) -> None:
-    """The four-surface write, with no decision-log call — callers log
-    separately (a single edit logs its own entry via `apply_edit` below; a
-    `--approve-all` batch logs ONE combined entry after looping this over
-    every surviving edit).
+    """The four-surface write, with no decision-log call — `apply_edit`
+    below is the thin wrapper that also logs one decision entry.
 
     1. casting-state's `charter` record (the system of record) via
        backup_and_write.
@@ -282,44 +268,17 @@ def apply_charter_surfaces(edit: CharterEdit) -> None:
         _rewrite_cast_table(edit.troupe_dir / "team.md", members_from_state(edit.state))
 
 
-def apply_edit(edit: CharterEdit, *, reason: str | None, from_proposal: bool = False) -> None:
-    """Thin wrapper used by the single-charter --approve/TTY-direct paths:
-    write all four surfaces, then log one decision entry for this edit."""
+def apply_edit(edit: CharterEdit, *, reason: str | None) -> None:
+    """Write all four surfaces, then log one decision entry for this edit."""
     apply_charter_surfaces(edit)
 
     changes = _describe_changes(edit.old_role, edit.new_role)
     what = f"Updated {edit.member_name}'s charter: {changes}."
-    if from_proposal:
-        what += " Applied from a staged proposal (propose-then-approve)."
     why = reason.strip() if reason and reason.strip() else "No reason given (--reason not passed)."
     append_decision_entry(
         edit.troupe_dir,
         date=date.today().isoformat(),
         title=f"Charter change for {edit.member_name} via `troupe charter`",
-        by="troupe charter (CLI)",
-        what=what,
-        why=why,
-    )
-
-
-def log_batch_decision(troupe_dir: Path, edits: list[CharterEdit], reason: str | None) -> None:
-    """One combined `.troupe/decisions.md` entry for a `--approve-all` batch —
-    mirrors `scaffold.log_recast_decision`'s "one invocation, one entry"
-    pattern for `troupe cast`'s multi-role batching."""
-    if not edits:
-        return
-    changes = "; ".join(
-        f"{edit.member_name} ({_describe_changes(edit.old_role, edit.new_role)})" for edit in edits
-    )
-    what = (
-        f"Updated charters for {len(edits)} member(s) via "
-        f"`troupe charter --approve-all`: {changes}."
-    )
-    why = reason.strip() if reason and reason.strip() else "No reason given (--reason not passed)."
-    append_decision_entry(
-        troupe_dir,
-        date=date.today().isoformat(),
-        title="Batch charter approval via `troupe charter --approve-all`",
         by="troupe charter (CLI)",
         what=what,
         why=why,
@@ -355,169 +314,3 @@ def render_diff(edit: CharterEdit) -> str:
             tofile=f"b/{rel}",
         )
     )
-
-
-# ── proposals ────────────────────────────────────────────────────────
-
-
-def proposal_path(root: Path, slug: str) -> Path:
-    """The one choke point every proposal file operation (stage/load/discard/
-    list) funnels through. `slug` ultimately comes from the CLI's NAME
-    argument (lowercased), which is not roster-validated before some callers
-    reach here (`--reject` discards before `prepare_edit` runs) — so a slug
-    containing path separators or `..` must be rejected here rather than
-    trusted, or it becomes a path-traversal write/read/delete rooted outside
-    `.troupe/proposals/` (confirmed: enough `../` segments in NAME reach
-    arbitrary paths on disk)."""
-    if not slug or "/" in slug or "\\" in slug or ".." in slug:
-        raise CharterEditError(f"'{slug}' is not a valid cast member slug")
-    return root.resolve() / ".troupe" / "proposals" / f"charter-{slug}.json"
-
-
-def stage_proposal(
-    root: Path, slug: str, fields: CharterFields, reason: str | None
-) -> tuple[Path, bool]:
-    """Write (or overwrite — one pending proposal per member) the staged
-    proposal file. Returns (path, whether an earlier proposal was replaced)."""
-    path = proposal_path(root, slug)
-    replaced = path.exists()
-    payload = {
-        "slug": slug,
-        "fields": fields.to_dict(),
-        "reason": reason,
-        "stagedAt": datetime.now(UTC).isoformat(timespec="seconds"),
-    }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8", newline="\n")
-    return path, replaced
-
-
-def load_proposal(root: Path, slug: str) -> tuple[CharterFields, str | None]:
-    """Read a staged proposal back as (fields, staged reason)."""
-    path = proposal_path(root, slug)
-    if not path.exists():
-        raise NoPendingProposalError(
-            f"no pending charter proposal for '{slug}' — stage one first (any "
-            "non-interactive `troupe charter` field edit stages, or pass --propose)"
-        )
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError as exc:
-        raise CharterEditError(
-            f"proposal file {path.relative_to(root.resolve()).as_posix()} is not valid JSON"
-        ) from exc
-    if not isinstance(raw, dict):
-        raise CharterEditError(
-            f"proposal file {path.relative_to(root.resolve()).as_posix()} is not a JSON object"
-        )
-    fields = CharterFields.from_dict(raw.get("fields") or {})
-    reason = raw.get("reason")
-    return fields, str(reason) if reason is not None else None
-
-
-def discard_proposal(root: Path, slug: str) -> Path:
-    path = proposal_path(root, slug)
-    if not path.exists():
-        raise NoPendingProposalError(f"no pending charter proposal for '{slug}'")
-    path.unlink()
-    return path
-
-
-@dataclass
-class BatchApprove:
-    """Everything `prepare_batch` validated and computed, before any writes.
-
-    `to_apply` holds one `CharterEdit` per proposal whose fields are not
-    already a no-op (a real, changed edit — including use-hint-only ones,
-    which have no charter.md diff but still change the record). `no_op_slugs`
-    holds the path-derived slugs of proposals whose computed edit is a no-op
-    (already matches — hand-applied elsewhere, or restaged into a no-op);
-    they are dropped from the apply set but still get discarded once the
-    batch is confirmed."""
-
-    to_apply: list[CharterEdit]
-    no_op_slugs: list[str]
-
-
-def prepare_batch(root: Path) -> BatchApprove:
-    """Validate every pending proposal, all-or-nothing, before touching
-    anything.
-
-    Proposals are enumerated by PATH-DERIVED slug (`path.stem` with the
-    `charter-` prefix removed), not the proposal JSON's own embedded `slug`
-    field — if a proposal's embedded slug disagrees with its filename, that
-    is a tamper signal and aborts the WHOLE batch, naming which file and the
-    mismatch, before anything is validated further.
-
-    Each proposal is then run through `prepare_edit` (the same roster/anchor
-    validation a single `--approve` uses). If ANY proposal fails validation
-    (unknown/retired member, missing anchor), the whole batch aborts before
-    rendering any diff — the raised `CharterEditError` names which member and
-    why. No partial validation: either every proposal is proven safe to
-    apply, or nothing is applied."""
-    root = root.resolve()
-    troupe_dir = root / ".troupe"
-    # One shared, loaded-once state dict for every edit in the batch -- see
-    # prepare_edit's `state` param docstring for why this matters.
-    state = load_state(troupe_dir)
-    directory = troupe_dir / "proposals"
-    to_apply: list[CharterEdit] = []
-    no_op_slugs: list[str] = []
-    for path in sorted(directory.glob("charter-*.json")):
-        file_slug = path.stem.removeprefix("charter-")
-        rel = path.relative_to(root).as_posix()
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except ValueError as exc:
-            raise CharterEditError(
-                f"proposal file {rel} is not valid JSON - aborting the whole batch"
-            ) from exc
-        if not isinstance(raw, dict):
-            raise CharterEditError(
-                f"proposal file {rel} is not a JSON object - aborting the whole batch"
-            )
-        embedded_slug = raw.get("slug")
-        if embedded_slug is not None and embedded_slug != file_slug:
-            raise CharterEditError(
-                f"proposal file {rel} claims slug '{embedded_slug}' but its filename "
-                f"implies '{file_slug}' - possible tampering, aborting the whole batch"
-            )
-        fields = CharterFields.from_dict(raw.get("fields") or {})
-        try:
-            edit = prepare_edit(root, file_slug, fields, state=state)
-        except CharterEditError as exc:
-            raise CharterEditError(
-                f"proposal for '{file_slug}' failed validation ({exc}) - aborting the "
-                "whole batch; --reject it or fix and retry"
-            ) from exc
-        if edit.changed:
-            to_apply.append(edit)
-        else:
-            no_op_slugs.append(file_slug)
-    return BatchApprove(to_apply=to_apply, no_op_slugs=no_op_slugs)
-
-
-def pending_proposals(root: Path, slug: str | None = None) -> list[dict]:
-    """Summaries of staged proposals (all, or one member's), oldest path first."""
-    directory = root.resolve() / ".troupe" / "proposals"
-    paths = [proposal_path(root, slug)] if slug else sorted(directory.glob("charter-*.json"))
-    entries: list[dict] = []
-    for path in paths:
-        if not path.exists():
-            continue
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except ValueError:
-            raw = {}
-        if not isinstance(raw, dict):
-            raw = {}
-        fields = raw.get("fields")
-        entries.append(
-            {
-                "slug": raw.get("slug") or path.stem.removeprefix("charter-"),
-                "stagedAt": raw.get("stagedAt", "unknown"),
-                "fields": sorted(fields) if isinstance(fields, dict) else [],
-                "path": path,
-            }
-        )
-    return entries

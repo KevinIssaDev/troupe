@@ -93,18 +93,6 @@ def test_guard_ignores_paths_outside_project(
     assert proc.returncode == 0
 
 
-def test_guard_allows_proposal_staging(project: Path) -> None:
-    # .troupe/proposals/ is deliberately NOT protected: staging a charter
-    # proposal is the agent-side half of the `troupe charter` human gate.
-    proc = run_hook(
-        project,
-        "troupe_file_guard.py",
-        write_payload(project, ".troupe/proposals/charter-mason.json"),
-    )
-    assert proc.returncode == 0
-    assert proc.stderr == ""
-
-
 # ── file guard: denial messages name the sanctioned path ─────────────
 
 
@@ -116,7 +104,6 @@ def test_guard_charter_denial_names_troupe_charter(project: Path) -> None:
     )
     assert proc.returncode == 2
     assert "troupe charter" in proc.stderr
-    assert "--approve" in proc.stderr
     assert "history.md" in proc.stderr  # names the observed workaround as off-limits
 
 

@@ -52,9 +52,8 @@ _SECRETS_GUIDANCE = (
 GUIDANCE = {
     ".troupe/agents/*/charter.md": (
         "Charters are human-approved mandates. Use `troupe charter <name> "
-        "--ownership ... --expertise ...` — from a non-interactive session it "
-        "stages a proposal the human applies with `troupe charter <name> "
-        "--approve`. Do not move mandate content into history.md instead."
+        "--ownership ... --expertise ...` directly. Do not move mandate "
+        "content into history.md instead."
     ),
     ".troupe/casting-state.json": (
         "Cast changes go through `troupe cast --add-role <role>` or "
