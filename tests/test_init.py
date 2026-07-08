@@ -111,6 +111,25 @@ def test_reinit_after_cast_reports_existing_cast_not_no_cast_yet(tmp_path: Path)
     assert state["assignments"]  # the earlier cast survived the re-init untouched
 
 
+def test_reinit_after_cast_leaves_casting_state_untouched(tmp_path: Path) -> None:
+    """Pins the widened scaffold() write condition
+    (`new_members or not <state file>.exists()`, decisions.md 2026-07-08):
+    a bare re-init must never rewrite an existing cast back to empty. Asserts
+    full before/after equality of the assignments dict, not just truthiness."""
+    run_init(tmp_path)
+
+    add_result = runner.invoke(app, ["cast", str(tmp_path), "--add-role", "tester"])
+    assert add_result.exit_code == 0, add_result.output
+
+    before = json.loads((tmp_path / ".troupe/casting-state.json").read_text(encoding="utf-8"))
+    assert before["assignments"]  # sanity: the member really is cast
+
+    run_init(tmp_path)
+
+    after = json.loads((tmp_path / ".troupe/casting-state.json").read_text(encoding="utf-8"))
+    assert after["assignments"] == before["assignments"]
+
+
 def test_reinit_is_idempotent(tmp_path: Path) -> None:
     run_init(tmp_path)
 
