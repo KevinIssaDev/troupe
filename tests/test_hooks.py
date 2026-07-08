@@ -267,7 +267,7 @@ def test_settings_merge_preserves_existing(tmp_path: Path) -> None:
     }
     (claude_dir / "settings.json").write_text(json.dumps(existing), encoding="utf-8")
 
-    scaffold(tmp_path)
+    scaffold(tmp_path, roles=[])
 
     merged = json.loads((claude_dir / "settings.json").read_text(encoding="utf-8"))
     assert merged["permissions"] == {"allow": ["Bash(npm test)"]}
@@ -278,6 +278,6 @@ def test_settings_merge_preserves_existing(tmp_path: Path) -> None:
 
 def test_settings_merge_is_idempotent(project: Path) -> None:
     before = (project / ".claude" / "settings.json").read_text(encoding="utf-8")
-    scaffold(project)
+    scaffold(project, roles=[])
     after = (project / ".claude" / "settings.json").read_text(encoding="utf-8")
     assert before == after
