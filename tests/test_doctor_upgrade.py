@@ -152,6 +152,34 @@ def test_upgrade_adds_missing_troupe_setup_command(project: Path) -> None:
     assert command in result.refreshed
 
 
+def test_upgrade_backfills_missing_claude_agents_dir(tmp_path: Path) -> None:
+    """A repo scaffolded by a pre-fix troupe version never got .claude/agents/
+    created at all when init cast nobody (the directory only appeared lazily,
+    mid-session, when a member was first cast — invisible to Claude Code's
+    file watcher). Simulate that by deleting the directory entirely after a
+    bare init, then confirm `troupe upgrade` backfills it and `troupe doctor`
+    reports cleanly afterward."""
+    result = runner.invoke(app, ["init", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+
+    agents_dir = tmp_path / ".claude" / "agents"
+    gitkeep = agents_dir / ".gitkeep"
+    assert agents_dir.is_dir()
+    gitkeep.unlink()
+    agents_dir.rmdir()
+    assert not agents_dir.exists()
+
+    upgrade_result = upgrade(tmp_path)
+
+    assert agents_dir.is_dir()
+    assert gitkeep.is_file()
+    assert gitkeep.read_text(encoding="utf-8") == ""
+    assert gitkeep in upgrade_result.refreshed
+
+    doctor_result = runner.invoke(app, ["doctor", str(tmp_path)])
+    assert doctor_result.exit_code == 0, doctor_result.output
+
+
 def test_upgrade_adds_missing_policy_knobs_preserving_user_edits(project: Path) -> None:
     policy_path = project / ".troupe" / "policy.json"
     policy = json.loads(policy_path.read_text(encoding="utf-8"))
