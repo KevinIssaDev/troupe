@@ -1,7 +1,8 @@
 """Scaffolding for `troupe init` — creates .troupe/ state and .claude/ agent definitions.
 
 Idempotency contract: files that hold user or team state (charters, histories,
-team.md, decisions.md, directives.md, config.json) are never overwritten.
+team.md, decisions.md, directives.md, focus.md, wisdom.md, config.json) are
+never overwritten.
 casting-state.json is rewritten only when new members are cast. Re-running
 init fills gaps and adds newly requested roles; it never renames or removes
 an existing cast member. `roles=[]` (bare `troupe init`'s only mode) scaffolds
@@ -121,6 +122,8 @@ def scaffold(root: Path, roles: list[str]) -> ScaffoldResult:
 
     _write_if_missing(troupe_dir / "decisions.md", _shared_template("decisions.md"), result)
     _write_if_missing(troupe_dir / "directives.md", _shared_template("directives.md"), result)
+    _write_if_missing(troupe_dir / "focus.md", _shared_template("focus.md"), result)
+    _write_if_missing(troupe_dir / "wisdom.md", _shared_template("wisdom.md"), result)
     _write_if_missing(
         troupe_dir / "config.json",
         json.dumps({"version": STATE_VERSION, "theme": state["theme"], "createdAt": now}, indent=2)

@@ -27,6 +27,8 @@ REQUIRED_FILES = (
     "team.md",
     "decisions.md",
     "directives.md",
+    "focus.md",
+    "wisdom.md",
     "config.json",
     "casting-state.json",
     "policy.json",

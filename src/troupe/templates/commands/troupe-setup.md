@@ -63,6 +63,26 @@ This is the same flow whether the roster is empty (first cast after a bare
    to retire someone or change ownership boundaries on your own initiative),
    say so plainly and ask first. Wait for explicit confirmation before step 5.
 
+   Render the roster as a fenced table, one row per member, each row led by
+   that member's role emoji so the lineup reads at a glance:
+
+   ```
+   🎯 Wright   — Architecture             Cross-cutting design, decomposition, review gate
+   🔧 Mason    — API                      Flask/Gunicorn REST API, ODM, client SDK
+   ⚛️ Webster  — UI                       React/TS SPA, components, Vitest
+   🧪 Fletcher — Quality                  Cross-cutting test suites
+   ```
+
+   Use the fixed emoji for the matching catalog role id — lead 🎯, backend
+   🔧, frontend ⚛️, tester 🧪, security 🛡️, devops 🔄, docs 📋, data 📊,
+   design 🎨 — regardless of the member's cast name, so the mapping stays
+   predictable across runs. A synthesized role id that doesn't match the
+   catalog (e.g. `mobile`) gets a generic 🧵. This is presentation only: it
+   does not change what `troupe cast`/`troupe charter` are invoked with in
+   step 5, and it has nothing to do with any naming theme — cast names
+   themselves are assigned by `troupe cast` from its own name pool, not
+   picked here.
+
 5. **Execute.** Once confirmed, apply directly — no further staging or
    approval step:
    - Roster changes first, batched into a single `troupe cast` invocation:
@@ -83,9 +103,12 @@ This is the same flow whether the roster is empty (first cast after a bare
      work around it by editing state files yourself.
 
 6. **Report.** Summarize what changed: who was cast, retitled, or retired,
-   and a one-line summary of each new/changed mandate. Suggest running
-   `/troupe-explore` next so each member's `history.md` gets seeded with
-   real findings from their own ownership area.
+   and a one-line summary of each new/changed mandate. Overwrite
+   `.troupe/focus.md` (don't append) with a short snapshot of the new
+   roster and what it's about to work on, replacing the "Updated:" line
+   with today's date. Suggest running `/troupe-explore` next so each
+   member's `history.md` gets seeded with real findings from their own
+   ownership area.
 
 ## Notes
 
