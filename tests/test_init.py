@@ -92,6 +92,9 @@ def test_troupe_setup_command_has_load_bearing_phrases(tmp_path: Path) -> None:
     assert "ask first" in text.lower() or "say so plainly and ask first" in text
     assert "apply directly" in text
     assert "history.md" in text and "never here" in text  # exploit/tribal-knowledge rule
+    # Roster changes batch into one `troupe cast` invocation, not one per member.
+    assert "single `troupe cast` invocation" in text
+    assert "never issue a separate `troupe cast` call per member" in text
 
 
 def test_reinit_after_cast_reports_existing_cast_not_no_cast_yet(tmp_path: Path) -> None:

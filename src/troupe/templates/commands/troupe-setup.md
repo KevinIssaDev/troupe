@@ -65,9 +65,15 @@ This is the same flow whether the roster is empty (first cast after a bare
 
 5. **Execute.** Once confirmed, apply directly — no further staging or
    approval step:
-   - For each roster change: `troupe cast --add-role <role>` (new member) or
-     `troupe cast --retire <name>` (removal), run via Bash from the project
-     root.
+   - Roster changes first, batched into a single `troupe cast` invocation:
+     one call with `troupe cast --add-role <role>` repeated for every new
+     member and `--retire <name>` repeated for every removal, plus one
+     `--reason` summarizing the whole roster change, run via Bash from the
+     project root. `--add-role`/`--retire` are repeatable flags on one
+     invocation — never issue a separate `troupe cast` call per member; one
+     invocation is one atomic roster change and logs exactly one decision
+     entry. Skip this call entirely if the plan has no roster changes
+     (charter-only edits).
    - For each member whose charter needs setting or changing: `troupe
      charter <name> --title "..." --expertise "..." --ownership "..."
      [--ownership "..." ...] --use-hint "..." --reason "..."`, one
