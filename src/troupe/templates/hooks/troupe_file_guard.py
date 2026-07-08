@@ -6,7 +6,10 @@ machine with Python 3, no troupe installation required.
 
 Reads the PreToolUse payload on stdin. If the tool is about to write to a
 path protected by `.troupe/policy.json`, exits with code 2 (which blocks the
-tool call) and explains why on stderr. Any other outcome exits 0.
+tool call) and explains why on stderr — naming the sanctioned alternative
+(`troupe charter`, `troupe cast`, `troupe upgrade`, or "ask the human") for
+the default patterns, so a blocked agent has a legitimate path forward
+instead of improvising around the block. Any other outcome exits 0.
 
 Pattern semantics: fnmatch-style, matched case-insensitively against the
 file's path relative to the project root, with `/` separators. Note that `*`
@@ -29,6 +32,57 @@ import sys
 from pathlib import Path
 
 WRITE_PATH_KEYS = ("file_path", "notebook_path")
+
+GENERIC_GUIDANCE = (
+    "This file is team governance state; do not modify it. "
+    "If the change is genuinely needed, ask the human to edit it "
+    "directly or to remove the pattern from .troupe/policy.json."
+)
+
+_SECRETS_GUIDANCE = (
+    "This path looks like credential material. Never write secret material "
+    "from a session; ask the human to manage credentials directly."
+)
+
+# Actionable guidance per pattern, keyed by the EXACT default pattern strings
+# shipped in troupe's templates/policy.json protectedPaths (a drift test in
+# the troupe repo pins that correspondence). Lookup lowercases the fired
+# pattern; a pattern the user added or edited misses and falls back to
+# GENERIC_GUIDANCE.
+GUIDANCE = {
+    ".troupe/agents/*/charter.md": (
+        "Charters are human-approved mandates. Use `troupe charter <name> "
+        "--ownership ... --expertise ...` directly. Do not move mandate "
+        "content into history.md instead."
+    ),
+    ".troupe/casting-state.json": (
+        "Cast changes go through `troupe cast --add-role <role>` or "
+        "`troupe cast --retire <name>`, never direct edits to this file."
+    ),
+    ".claude/agents/*.md": (
+        "Compiled agent definitions are derived files. Change the mandate via "
+        "`troupe cast`/`troupe charter`; `troupe upgrade` refreshes these."
+    ),
+    ".claude/hooks/*": (
+        "Hook scripts are troupe-owned and refreshed by `troupe upgrade`; "
+        "if one needs to change, ask the human."
+    ),
+    ".troupe/policy.json": "The governance policy is human-owned; ask the human to change it.",
+    ".claude/settings.json": (
+        "Settings are human-owned; troupe's hook wiring is merged in by "
+        "`troupe init`/`troupe upgrade`."
+    ),
+    ".troupe/approvals/*": (
+        "Approval markers are written by the human review flow, never by agents."
+    ),
+    ".troupe/config.json": "Troupe configuration is human-owned; ask the human.",
+    ".troupe/.runtime/*": "Runtime state is machine-owned; the troupe CLI manages it.",
+    ".troupe/reeve-stop": "The reeve stop marker is human-owned; ask the human.",
+    ".env": _SECRETS_GUIDANCE,
+    ".env.*": _SECRETS_GUIDANCE,
+    "*.pem": _SECRETS_GUIDANCE,
+    "*id_rsa*": _SECRETS_GUIDANCE,
+}
 
 
 def project_root(payload: dict) -> Path | None:
@@ -76,12 +130,11 @@ def main() -> int:
     rel_posix = rel.as_posix().lower()
     for pattern in load_patterns(root):
         if fnmatch.fnmatch(rel_posix, pattern.lower()):
+            guidance = GUIDANCE.get(pattern.lower(), GENERIC_GUIDANCE)
             sys.stderr.write(
                 f"troupe file guard: '{rel.as_posix()}' is protected "
                 f"(pattern '{pattern}' in .troupe/policy.json). "
-                "This file is team governance state; do not modify it. "
-                "If the change is genuinely needed, ask the human to edit it "
-                "directly or to remove the pattern from .troupe/policy.json.\n"
+                f"{guidance}\n"
             )
             return 2
 

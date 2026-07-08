@@ -4,13 +4,13 @@ writes are plain `Path` I/O from the `troupe` CLI process, never a Claude
 Code tool call (`troupe_file_guard.py`'s `PreToolUse` registration only ever
 sees `Write`/`Edit`/`NotebookEdit` calls from a live session).
 
-Used by `troupe cast`'s retire path (`scaffold.py`) today. A not-yet-built
-`troupe charter` command is expected to reuse both helpers too — deliberately
-*not* a shared confirm gate, since
-`cast`'s explicit-input flags skip confirmation by design while `charter`'s
-freeform-prose inputs need a preview first. Also deliberately not shared
-with `troupe_decision_log.py` (the `TaskCompleted` hook), which stays
-stdlib-only and independent of the installed `troupe` package version.
+Used by `troupe cast`'s retire path (`scaffold.py`) and `troupe charter`'s
+apply path (`charters/editor.py`) — deliberately *not* a shared confirm
+gate, since `cast`'s explicit-input flags skip confirmation by design while
+`charter` previews a diff and confirms (or stages a proposal off a TTY).
+Also deliberately not shared with `troupe_decision_log.py` (the
+`TaskCompleted` hook), which stays stdlib-only and independent of the
+installed `troupe` package version.
 """
 
 from __future__ import annotations
