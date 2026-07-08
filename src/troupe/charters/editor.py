@@ -52,6 +52,12 @@ class AnchorMissingError(CharterEditError):
     """charter.md lacks an anchor a changed field needs; nothing was written."""
 
 
+class InvalidFieldValueError(CharterEditError):
+    """A field value contains a newline, which would corrupt charter.md's
+    line-based anchors (a fake heading/section injected mid-document) and
+    team.md's single-line table row."""
+
+
 @dataclass(frozen=True)
 class CharterFields:
     """The structured field overrides one invocation carries. `None` means
@@ -131,7 +137,14 @@ def prepare_edit(root: Path, name: str, fields: CharterFields) -> CharterEdit:
 
     Always loads casting-state.json fresh: every `troupe charter` invocation
     is its own OS process (there is no in-process batching any more), so
-    there is no shared in-memory state for a later write to clobber."""
+    there is no shared in-memory state for a later write to clobber.
+
+    Raises InvalidFieldValueError before touching anything if any field
+    value contains a newline — charter.md's anchors and team.md's roster
+    row are both rewritten as single lines, so an embedded newline would
+    inject arbitrary extra lines (e.g. a fake '## Ownership' section)
+    rather than being treated as inert text."""
+    _reject_newlines(fields)
     root = root.resolve()
     troupe_dir = root / ".troupe"
     state = load_state(troupe_dir)
@@ -174,6 +187,20 @@ def prepare_edit(root: Path, name: str, fields: CharterFields) -> CharterEdit:
         old_charter_text=old_text,
         new_charter_text=new_text,
     )
+
+
+def _reject_newlines(fields: CharterFields) -> None:
+    for flag, value in (
+        ("--title", fields.title),
+        ("--expertise", fields.expertise),
+        ("--use-hint", fields.use_hint),
+    ):
+        if value is not None and "\n" in value:
+            raise InvalidFieldValueError(f"{flag} value must not contain a newline")
+    if fields.ownership is not None:
+        for item in fields.ownership:
+            if "\n" in item:
+                raise InvalidFieldValueError("--ownership values must not contain a newline")
 
 
 def _rewrite_charter_text(text: str, name: str, old: Role, new: Role) -> str:

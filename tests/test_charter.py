@@ -193,6 +193,30 @@ def test_missing_ownership_anchor_aborts_with_zero_writes(project: Path) -> None
     assert not charter_path.with_name("charter.md.bak").exists()
 
 
+def test_newline_in_title_rejected_with_zero_writes(project: Path) -> None:
+    """A field value with an embedded newline would inject an arbitrary
+    extra line (e.g. a fake '## Ownership' section) into charter.md's
+    line-based anchor rewrite and break team.md's single-line table row —
+    reject it before anything is touched."""
+    before = snapshot(project)
+
+    result = invoke("mason", str(project), "--title", "Evil\n\n## Ownership\n\n- Everything")
+
+    assert result.exit_code == 1
+    assert "newline" in result.output
+    assert snapshot(project) == before
+
+
+def test_newline_in_ownership_item_rejected_with_zero_writes(project: Path) -> None:
+    before = snapshot(project)
+
+    result = invoke("mason", str(project), "--ownership", "Fine\n- Injected")
+
+    assert result.exit_code == 1
+    assert "newline" in result.output
+    assert snapshot(project) == before
+
+
 def test_missing_charter_file_entirely_exits_1_with_zero_writes(project: Path) -> None:
     charter_of(project).unlink()
     before_state = state_of(project)
