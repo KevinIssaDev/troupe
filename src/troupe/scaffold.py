@@ -98,6 +98,14 @@ def scaffold(root: Path, roles: list[str]) -> ScaffoldResult:
             }
         state["assignments"][member.slug] = record
 
+    # `.claude/agents/` must exist unconditionally, even with zero cast
+    # members — Claude Code's file watcher only covers directories that
+    # existed when the session started, so a directory created lazily
+    # mid-session (e.g. inside /troupe-setup's first cast) is invisible to
+    # spawn until restart. git doesn't track empty directories, so a
+    # placeholder is required for the directory to survive the first commit.
+    _write_if_missing(root / ".claude" / "agents" / ".gitkeep", "", result)
+
     # Per-member files (charter/history are state: never overwritten; the
     # compiled agent definition is derived, but init still won't clobber a
     # user-edited copy — `troupe upgrade` owns refreshing those).

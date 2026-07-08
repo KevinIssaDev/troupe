@@ -36,6 +36,7 @@ def test_init_creates_expected_tree(tmp_path: Path) -> None:
         ".claude/commands/troupe-explore.md",
         ".claude/commands/troupe-cast.md",
         ".claude/commands/troupe-setup.md",
+        ".claude/agents/.gitkeep",
     ):
         assert (tmp_path / rel).is_file(), f"missing {rel}"
 
@@ -53,7 +54,29 @@ def test_init_casts_nobody(tmp_path: Path) -> None:
     assert cast_section.count("\n|") == 2  # header + separator only
 
     assert not (tmp_path / ".troupe/agents").exists()
-    assert not (tmp_path / ".claude/agents").exists()
+
+    # .claude/agents/ must exist unconditionally, even with zero cast members —
+    # Claude Code's file watcher only covers directories present at session
+    # start, so a directory created later (e.g. mid-session by /troupe-setup's
+    # first cast) is invisible to spawn until restart.
+    agents_dir = tmp_path / ".claude/agents"
+    assert agents_dir.is_dir()
+    assert (agents_dir / ".gitkeep").is_file()
+    assert list(agents_dir.glob("*.md")) == []
+
+
+def test_reinit_leaves_claude_agents_gitkeep_unchanged(tmp_path: Path) -> None:
+    """A second bare `init` must not duplicate or corrupt anything under
+    .claude/agents/ — the placeholder stays a single empty .gitkeep file."""
+    run_init(tmp_path)
+    agents_dir = tmp_path / ".claude/agents"
+    gitkeep = agents_dir / ".gitkeep"
+    before_content = gitkeep.read_text(encoding="utf-8")
+
+    run_init(tmp_path)
+
+    assert list(agents_dir.iterdir()) == [gitkeep]
+    assert gitkeep.read_text(encoding="utf-8") == before_content == ""
 
 
 def test_hooks_and_settings_wired_with_zero_cast(tmp_path: Path) -> None:

@@ -5,6 +5,8 @@ Troupe-owned (refreshed to current templates):
   .claude/commands/troupe-explore.md — fan-out exploration command
   .claude/commands/troupe-cast.md — add-role/retire command
   .claude/commands/troupe-setup.md — repo-grounded cast/charter proposal command
+  .claude/agents/.gitkeep      — keeps the directory tracked/present even with
+                                 zero cast members (backfills pre-fix repos)
   .claude/agents/{slug}.md     — compiled agent definitions (customize the
                                  charter, not these; the definition tells the
                                  agent to read its charter first)
@@ -68,6 +70,8 @@ def upgrade(root: Path) -> UpgradeResult:
         files("troupe.templates").joinpath("commands/troupe-setup.md").read_text(encoding="utf-8")
     )
     _refresh(root / ".claude" / "commands" / "troupe-setup.md", desired_setup_command, result)
+
+    _refresh(root / ".claude" / "agents" / ".gitkeep", "", result)
 
     for member in members_from_state(load_state(troupe_dir)):
         desired = render_agent_definition(member, created_at="")
