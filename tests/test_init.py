@@ -94,6 +94,23 @@ def test_troupe_setup_command_has_load_bearing_phrases(tmp_path: Path) -> None:
     assert "history.md" in text and "never here" in text  # exploit/tribal-knowledge rule
 
 
+def test_reinit_after_cast_reports_existing_cast_not_no_cast_yet(tmp_path: Path) -> None:
+    """Regression: bare `init` re-run after a member has been cast (e.g. via
+    `troupe cast --add-role`) must not repeat the "No cast yet" guidance —
+    that message is only true on a genuinely cast-less repo."""
+    run_init(tmp_path)
+
+    add_result = runner.invoke(app, ["cast", str(tmp_path), "--add-role", "tester"])
+    assert add_result.exit_code == 0, add_result.output
+
+    output = run_init(tmp_path)
+    assert "No cast yet" not in output
+    assert "Cast already assembled" in output
+
+    state = json.loads((tmp_path / ".troupe/casting-state.json").read_text(encoding="utf-8"))
+    assert state["assignments"]  # the earlier cast survived the re-init untouched
+
+
 def test_reinit_is_idempotent(tmp_path: Path) -> None:
     run_init(tmp_path)
 

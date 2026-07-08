@@ -4,9 +4,10 @@ Bare `init` (no flags — mirrors `doctor`'s signature: at most a path
 argument) unconditionally scaffolds governance with zero cast members:
 casting-state.json ships with empty assignments, team.md's `## Cast` table
 is empty, and all three command templates plus hooks/settings are wired.
-No scan, no proposal, no confirmation prompt — always the same output shape
-for a given target directory. Casting a real team is `/troupe-setup`'s job
-(a live, repo-grounded Claude Code session), not this command's.
+No scan, no proposal, no confirmation prompt. Casting a real team is
+`/troupe-setup`'s job (a live, repo-grounded Claude Code session), not
+this command's — re-running `init` afterward reports the existing cast
+instead of falsely claiming there's none yet.
 """
 
 from __future__ import annotations
@@ -52,7 +53,13 @@ def _echo_result(result: ScaffoldResult) -> None:
     troupe_dir = result.root / ".troupe"
     typer.echo(f"Team state: {troupe_dir}")
     typer.echo("Next: commit .troupe/ and .claude/ so the team travels with the repo.")
-    typer.echo(
-        "No cast yet — that's expected. Open Claude Code and run /troupe-setup to cast "
-        "your team, grounded in a real read of this repo."
-    )
+    if result.cast:
+        typer.echo(
+            "Cast already assembled — see .troupe/team.md. Run /troupe-setup in Claude "
+            "Code if you want to revisit it."
+        )
+    else:
+        typer.echo(
+            "No cast yet — that's expected. Open Claude Code and run /troupe-setup to cast "
+            "your team, grounded in a real read of this repo."
+        )
