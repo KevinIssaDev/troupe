@@ -29,6 +29,8 @@ def test_init_creates_expected_tree(tmp_path: Path) -> None:
         ".troupe/team.md",
         ".troupe/decisions.md",
         ".troupe/directives.md",
+        ".troupe/focus.md",
+        ".troupe/wisdom.md",
         ".troupe/config.json",
         ".troupe/casting-state.json",
         ".troupe/policy.json",

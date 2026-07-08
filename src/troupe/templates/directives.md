@@ -9,3 +9,6 @@
 - Adding or retiring a cast member is the lead's call: run `troupe cast --add-role <role>`
   or `troupe cast --retire <name>` (via Bash) — never hand-edit `casting-state.json`
   or `.claude/agents/*.md` directly.
+- Keep `.troupe/focus.md` current — overwrite it (don't append) when the team's active focus changes.
+- When you discover a reusable pattern or heuristic, distill it into `.troupe/wisdom.md` — not raw
+  transcripts or per-task notes; those belong in your own `agents/<name>/history.md`.

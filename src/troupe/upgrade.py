@@ -17,8 +17,8 @@ Extended, never modified:
                                  as the user set them
   .claude/settings.json        — missing troupe hook entries are merged in
 
-Never touched: team.md, decisions.md, directives.md, charters, histories,
-casting-state.json, config.json.
+Never touched: team.md, decisions.md, directives.md, focus.md, wisdom.md,
+charters, histories, casting-state.json, config.json.
 """
 
 from __future__ import annotations

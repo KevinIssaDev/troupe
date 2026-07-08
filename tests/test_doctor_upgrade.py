@@ -32,6 +32,11 @@ def test_doctor_fails_outside_troupe_project(tmp_path: Path) -> None:
     assert "troupe init" in result.output
 
 
+def test_doctor_fails_on_missing_focus_or_wisdom(project: Path) -> None:
+    (project / ".troupe" / "focus.md").unlink()
+    assert statuses(project)["troupe scaffold"] == "fail"
+
+
 def test_doctor_fails_on_missing_hook_script(project: Path) -> None:
     (project / ".claude" / "hooks" / "troupe_file_guard.py").unlink()
     assert statuses(project)["hook scripts"] == "fail"

@@ -12,6 +12,7 @@ class Role:
     expertise: str
     ownership: tuple[str, ...]
     use_hint: str
+    emoji: str = "🧵"
 
 
 ROLE_CATALOG: dict[str, Role] = {
@@ -20,6 +21,7 @@ ROLE_CATALOG: dict[str, Role] = {
         Role(
             id="lead",
             title="Lead",
+            emoji="🎯",
             expertise="Architecture, technical decisions, code review, scope control",
             ownership=(
                 "Architectural direction and cross-cutting design decisions",
@@ -37,6 +39,7 @@ ROLE_CATALOG: dict[str, Role] = {
         Role(
             id="backend",
             title="Backend",
+            emoji="🔧",
             expertise="APIs, services, data models, business logic",
             ownership=(
                 "Server-side code: endpoints, services, background jobs",
@@ -48,6 +51,7 @@ ROLE_CATALOG: dict[str, Role] = {
         Role(
             id="frontend",
             title="Frontend",
+            emoji="⚛️",
             expertise="UI components, styling, client-side state, accessibility",
             ownership=(
                 "UI components and their styling",
@@ -59,6 +63,7 @@ ROLE_CATALOG: dict[str, Role] = {
         Role(
             id="tester",
             title="Tester",
+            emoji="🧪",
             expertise="Test plans, regression coverage, edge cases, breaking things on purpose",
             ownership=(
                 "Test plans and test code",
@@ -70,6 +75,7 @@ ROLE_CATALOG: dict[str, Role] = {
         Role(
             id="security",
             title="Security",
+            emoji="🛡️",
             expertise="AuthN/authZ, secrets handling, input validation, dependency risk",
             ownership=(
                 "Authentication and authorization flows",
@@ -81,6 +87,7 @@ ROLE_CATALOG: dict[str, Role] = {
         Role(
             id="devops",
             title="DevOps",
+            emoji="🔄",
             expertise="CI/CD pipelines, builds, releases, infrastructure",
             ownership=(
                 "CI/CD pipelines and build configuration",
@@ -92,6 +99,7 @@ ROLE_CATALOG: dict[str, Role] = {
         Role(
             id="docs",
             title="Docs",
+            emoji="📋",
             expertise="READMEs, API documentation, changelogs, developer guides",
             ownership=(
                 "README and developer guides",
@@ -103,6 +111,7 @@ ROLE_CATALOG: dict[str, Role] = {
         Role(
             id="data",
             title="Data",
+            emoji="📊",
             expertise="Schemas, queries, pipelines, analytics",
             ownership=(
                 "Database schemas and query performance",
@@ -114,6 +123,7 @@ ROLE_CATALOG: dict[str, Role] = {
         Role(
             id="design",
             title="Design",
+            emoji="🎨",
             expertise="Interaction design, visual consistency, UX review",
             ownership=(
                 "Interaction patterns and visual consistency",
