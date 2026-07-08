@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0 (2026-07-08)
+
+- New `troupe charter` command — structured, ungated charter edits for
+  cast members (`--add`, `--edit`, etc.), applied directly instead of
+  going through a propose/approve gate. Proposal paths are guarded
+  against path-traversal `NAME` arguments, and charter field values
+  are rejected outright if they contain newlines to keep the file
+  format safe.
+- `troupe init` no longer runs a deterministic project scanner to
+  guess a cast for you. A bare `init` now casts nobody, leaving the
+  team empty until you run `troupe cast` or the new `/troupe-setup`
+  slash command, which walks the roster changes and batches them into
+  a single `troupe cast` call. The old scanner subsystem and its
+  guidance text were removed; `troupe doctor`'s advice after a bare
+  init was updated to match the new (cast-nobody) behavior.
+- Fixed `.claude/agents/` not being created unconditionally, which
+  meant Claude Code's own file watcher could miss it depending on
+  scaffold order.
+
 ## 0.4.0 (2026-07-07)
 
 - New `troupe cast` command — grow or retire the cast after `init`.
