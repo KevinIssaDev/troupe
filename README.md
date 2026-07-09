@@ -38,11 +38,13 @@ Claude reads your repo — manifests, entrypoints, directory structure, CI — a
 
 Nothing is written until you approve the lineup. Each member gets a charter grounded in what was actually read, and every roster change is logged to the team's decision log with its reasoning.
 
-**3. Put them to work.** Spawn cast members by name as subagents — or as teammates, with Claude Code's [Agent Teams](https://code.claude.com/docs/en/agent-teams) flag on:
+**3. Put them to work.** Just ask — work is routed to whoever owns that part of the codebase:
 
 ```
-Spawn mason to build the API endpoints, and fletcher to write tests for them.
+Hey team, build the API endpoints and test them.
 ```
+
+Members run as subagents — or as parallel teammates, with Claude Code's [Agent Teams](https://code.claude.com/docs/en/agent-teams) flag on. You can also address anyone by name ("Mason, ...").
 
 Every session starts with the roster, standing rules, and recent decisions already injected — you never re-explain who's who. Members read their own charter and history before working, stay inside their ownership area, and record what they learn when they finish.
 
