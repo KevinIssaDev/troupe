@@ -2,39 +2,9 @@
 
 **A persistent, governed AI team for Claude Code.**
 
-Troupe gives your repository a named cast of AI specialists — a lead, a backend dev, a frontend dev, a tester — that **live in your repo as files**. They keep their names, charters, and accumulated knowledge across sessions, share an append-only architectural decision log, work under governance rules enforced by real Claude Code hooks (not polite prompt suggestions), and can optionally triage your GitHub issues overnight.
+Troupe gives your repository a named cast of AI specialists — a lead, a backend dev, a frontend dev, a tester — that **live in your repo as files**. They keep their names, charters, and accumulated knowledge across sessions, share an append-only decision log and a standing-rules file, work under governance rules enforced by real Claude Code hooks (not polite prompt suggestions), and can optionally triage your GitHub issues overnight.
 
 > ⚠️ **Alpha software.** Interfaces may change between releases. Reeve (the autonomous watch) spends real money when you pass `--execute` — read [its safety model](#reeve--the-autonomous-issue-watch) first.
-
-```
-$ uvx troupe init
-Project: your-project
-Detected: ...
-Proposed cast: ...
-Cast this team? [y/N]: y
-
-Cast:
-  Wright     Lead
-  Mason      Backend
-  Webster    Frontend
-  Sawyer     Tester
-Created 24 file(s), left 0 untouched.
-```
-
-## Why Troupe when Agent Teams exists
-
-Claude Code's experimental [Agent Teams](https://code.claude.com/docs/en/agent-teams) already does orchestration well: a team lead, parallel teammates with their own context windows, a shared task list, inter-agent messaging. **Troupe builds none of that.** It fills the gaps that are file-shaped — the things that vanish when the session ends:
-
-| | Agent Teams (native) | Troupe adds |
-|---|---|---|
-| **Team identity** | Session-scoped; teams are named `session-…` and dissolve on exit | A persistent cast with names, charters, and per-member history, committed to the repo |
-| **Rules & memory** | Task list persists per session, holds ephemeral work items | `decisions.md` (append-only decision log) + `directives.md` (standing rules), injected into every session |
-| **Governance** | Permission modes and hook *capability* | Enforced policy content: file-write guard, PII scrub, reviewer lockout, bounded idle nudge — emitted as working hooks |
-| **Unattended work** | — | Reeve: a schedulable issue watch with hard cost/turn/time ceilings |
-
-Compared to its prior art, [Squad](https://github.com/bradygaster/squad) (which pioneered this model for GitHub Copilot CLI): Troupe is Python-native, targets Claude Code, and leans on Agent Teams for all orchestration instead of shipping its own coordinator. Compared to orchestrators like Gas Town or Multiclaude, Troupe doesn't compete on spawn mechanics at all — it's the persistence and governance layer underneath whatever does the orchestrating.
-
-Works with the Agent Teams flag on (cast members become teammate types); degrades gracefully to plain subagents when it's off. Both paths use the same `.claude/agents/` definitions.
 
 ## Quick start
 
@@ -42,21 +12,33 @@ Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/) (or pip), Claude Co
 
 ```bash
 cd your-project
-uvx troupe init                       # scans the repo, proposes a tailored cast, confirms before writing
-uvx troupe init --yes                 # accept the proposed cast without prompting (CI-friendly)
-uvx troupe init --roles lead,backend,frontend,tester,security,devops,docs   # skip the proposal, cast exactly these
-uvx troupe init --no-scan             # skip the scan entirely: default cast, generic charters
-git add .troupe .claude && git commit -m "cast the troupe"
+uvx troupe init                       # scaffolds .troupe/ and .claude/ — casts nobody yet
+git add .troupe .claude && git commit -m "scaffold the troupe"
 ```
 
-`init` scans the repo first — manifests, CLI entrypoints, frameworks, tests, CI, infra, docs markers — and proposes a cast with per-role rationale before writing anything (`--dry-run` previews without writing). In a non-interactive shell (CI, scripts), bare `init` exits 2 asking for `--yes` or `--roles` rather than scaffolding silently. The scan is monorepo-aware: a repo with no root manifest but several projects nested a few directories down (e.g. `api/`, `ui/`) is detected as `kind: monorepo`, and the proposal covers every discovered component.
+`init` unconditionally scaffolds governance — hooks, settings, an empty roster — and nothing else. There's no scan and no cast yet on purpose: casting a team well means actually reading the repo, and that's a job for a live Claude Code session, not a CLI heuristic.
 
-Then open Claude Code in the project. The `SessionStart` hook injects the roster, standing rules, and recent decisions into every session automatically. Run `/troupe-explore` to have every active cast member read their own ownership area of the codebase and record findings in their own `history.md` — a deliberate, user-invoked deep pass beyond the scan's deterministic summary. Spawn cast members as subagents (or, with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, as teammates) by their agent type:
+Open Claude Code in the project and run **`/troupe-setup`**. It reads the repo (manifests, entrypoints, directory structure, CI config — a bounded ~25-file pass), proposes a roster with a rationale for each role, and waits for your confirmation before casting anyone via `troupe cast`/`troupe charter`. This works identically whether the roster is empty (first cast) or you're re-tailoring an existing one.
+
+```
+You: /troupe-setup
+
+Claude: Proposed cast for a Flask API + React SPA:
+  🎯 Wright  — Architecture   cross-cutting design, review gate
+  🔧 Mason   — API            Flask backend, ODM, background jobs
+  ⚛️ Webster — UI             React/TS SPA, components
+  🧪 Fletcher — Quality       test suites across the stack
+Cast this team? [waits for you to confirm]
+```
+
+From then on, the `SessionStart` hook injects the roster, standing rules, and recent decisions into every session automatically. Spawn cast members as subagents (or, with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, as teammates) by their agent type:
 
 ```
 Spawn a teammate using the mason agent type to build the API endpoints,
-and sawyer to write tests for them.
+and fletcher to write tests for them.
 ```
+
+Run `/troupe-explore` any time to have every active cast member read their own ownership area and record findings in their own `history.md` — a deliberate, user-invoked deep pass beyond what `/troupe-setup`'s bounded scan covers.
 
 Check or repair a setup any time:
 
@@ -65,6 +47,44 @@ uvx troupe doctor      # diagnoses scaffold, hooks, wiring, environment
 uvx troupe upgrade     # refreshes troupe-owned files; never touches team state
 ```
 
+## Commands
+
+| Command | What it does |
+|---|---|
+| `troupe init [path]` | Scaffold `.troupe/` + `.claude/`. Casts nobody. Idempotent — safe to re-run, never overwrites existing team state. |
+| `troupe doctor [path]` | Diagnose the setup: missing scaffold files, stale/unwired hooks, policy drift, environment. Exit 1 on any failure. |
+| `troupe upgrade [path]` | Refresh troupe-owned files (hook scripts, agent definitions, missing policy sections) from the installed version's templates. Never touches team state. |
+| `troupe cast [--add-role ID]... [--retire NAME]... [--reason "..."]` | Grow or retire the cast directly. Explicit input, no scan, no confirm prompt — this is what `/troupe-cast` runs under the hood. |
+| `troupe charter NAME [--title] [--expertise] [--ownership]... [--use-hint] [--reason]` | Edit a cast member's mandate through structured fields, applied immediately. What `/troupe-setup`'s charter edits run under the hood. |
+| `troupe watch [--execute]` | Reeve's polling loop over GitHub issues. See [below](#reeve--the-autonomous-issue-watch). |
+
+Most of these you'll never type yourself — the Claude Code slash commands below call `cast`/`charter` for you with the right flags and log a decision entry automatically. They're documented here because `troupe cast`/`troupe charter` are also the *only* sanctioned way to hand-edit the roster if you're scripting something outside Claude Code.
+
+## Slash commands (inside Claude Code)
+
+| Command | What it does |
+|---|---|
+| `/troupe-setup` | Propose and apply a repo-grounded cast and charters, with your confirmation first. Same flow for an empty roster or re-tailoring an existing one. |
+| `/troupe-cast` | Grow or retire the cast for an explicit request ("add a security specialist," "retire Webster") — no repo scan. |
+| `/troupe-explore` | Have every active cast member read their own ownership area and record findings in their `history.md`. |
+
+None of these ever hand-edit `.troupe/casting-state.json` or `.claude/agents/*.md` directly — they always go through the `troupe cast`/`troupe charter` CLI, so every roster change is validated and logged to `decisions.md` the same way.
+
+## Why Troupe when Agent Teams exists
+
+Claude Code's experimental [Agent Teams](https://code.claude.com/docs/en/agent-teams) already does orchestration well: a team lead, parallel teammates with their own context windows, a shared task list, inter-agent messaging. **Troupe builds none of that.** It fills the gaps that are file-shaped — the things that vanish when the session ends:
+
+| | Agent Teams (native) | Troupe adds |
+|---|---|---|
+| **Team identity** | Session-scoped; teams are named `session-…` and dissolve on exit | A persistent cast with names, charters, and per-member history, committed to the repo |
+| **Rules & memory** | Task list persists per session, holds ephemeral work items | `decisions.md` (history) + `directives.md` (standing rules) + `focus.md` (what's active now) + `wisdom.md` (distilled patterns), injected into every session |
+| **Governance** | Permission modes and hook *capability* | Enforced policy content: file-write guard, PII scrub, reviewer lockout, bounded idle nudge — emitted as working hooks |
+| **Unattended work** | — | Reeve: a schedulable issue watch with hard cost/turn/time ceilings |
+
+Compared to its prior art, [Squad](https://github.com/bradygaster/squad) (which pioneered this model for GitHub Copilot CLI): Troupe is Python-native, targets Claude Code, and leans on Agent Teams for all orchestration instead of shipping its own coordinator. Compared to orchestrators like Gas Town or Multiclaude, Troupe doesn't compete on spawn mechanics at all — it's the persistence and governance layer underneath whatever does the orchestrating.
+
+Works with the Agent Teams flag on (cast members become teammate types); degrades gracefully to plain subagents when it's off. Both paths use the same `.claude/agents/` definitions.
+
 ## What gets created
 
 ```
@@ -72,16 +92,17 @@ uvx troupe upgrade     # refreshes troupe-owned files; never touches team state
 ├── team.md              # roster
 ├── decisions.md         # append-only decision log (auto-fed by hook)
 ├── directives.md        # standing rules, edit in place
-├── policy.json          # governance policy: protected paths, PII, gates
-├── profile.json         # the scan's project profile (kind, languages, signals, components)
+├── focus.md              # what the team is working on right now (overwrite in place)
+├── wisdom.md             # distilled, reusable patterns (append-only)
+├── policy.json           # governance policy: protected paths, PII, gates
 ├── config.json · casting-state.json
 └── agents/{name}/
-    ├── charter.md       # role definition, seeded with what the scan found — yours to edit
+    ├── charter.md       # role definition — set by /troupe-setup, yours to edit after
     └── history.md       # accumulated knowledge — the agent appends
 .claude/
 ├── settings.json        # hook wiring (merged non-destructively)
 ├── hooks/               # six self-contained governance scripts (stdlib-only)
-├── commands/troupe-explore.md  # the /troupe-explore slash command
+├── commands/             # /troupe-setup, /troupe-cast, /troupe-explore
 └── agents/{name}.md     # compiled definitions: teammate types AND subagents
 ```
 
@@ -90,6 +111,8 @@ Commit `.troupe/` and `.claude/`. Anyone who clones gets the team — same names
 ### The cast
 
 Names come from English occupational surnames, chosen so the etymology quietly maps to the role: **Wright** (master builder) leads, **Mason** (foundations) takes backend, **Webster** (weaver — of webs) takes frontend, **Sawyer** (cuts things open) tests, **Ward** (watchman) does security, **Piper** (keeps pipes flowing) does DevOps, **Page** does docs. A 24-name pool with role affinities backs larger casts; names are never reused within a project, even after a member retires.
+
+`/troupe-setup` renders a proposed roster with a fixed emoji per role — 🎯 lead, 🔧 backend, ⚛️ frontend, 🧪 tester, 🛡️ security, 🔄 devops, 📋 docs, 📊 data, 🎨 design — so the lineup is easy to scan before you confirm it.
 
 ## Governance — enforced, not suggested
 
@@ -135,14 +158,14 @@ uv tool upgrade troupe   # or: pip install -U troupe
 uvx troupe upgrade       # refresh hook scripts, agent definitions, policy sections
 ```
 
-`troupe upgrade` never touches team state (charters, histories, decisions, directives, casting) and never modifies policy keys you've edited — it only adds missing sections.
+`troupe upgrade` never touches team state (charters, histories, decisions, directives, focus, wisdom, casting) and never modifies policy keys you've edited — it only adds missing sections.
 
 ## Development
 
 ```bash
 git clone https://github.com/KevinIssaDev/troupe && cd troupe
 uv sync --dev
-uv run pytest            # 150+ tests; gh and claude are stubbed throughout
+uv run pytest            # 170+ tests; gh and claude are stubbed throughout
 uv run ruff check . && uv run ruff format --check . && uv run pyright
 ```
 
