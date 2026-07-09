@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1 (2026-07-09)
+
+- `/troupe-setup` proposals now show a role emoji per cast member,
+  and scaffolding gains two new team-memory files alongside each
+  member's `history.md`: `focus.md` (overwrite-in-place snapshot of
+  current work) and `wisdom.md` (append-only log of distilled,
+  reusable patterns). `troupe doctor` checks for their presence.
+- Clarified in the scaffolded `decisions.md`/`directives.md` templates
+  that standing ground rules ("never commit X", "plans go in Y")
+  belong in `directives.md`, not `decisions.md` — each file now points
+  at the other so an agent doesn't misfile a rule as a one-off
+  decision.
+
 ## 0.5.0 (2026-07-08)
 
 - New `troupe charter` command — structured, ungated charter edits for
