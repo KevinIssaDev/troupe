@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.3 (2026-07-09)
+
+- Fixed `/troupe-cast` crashing when run against a bare `troupe init`
+  with no cast members yet: it now detects an empty roster up front
+  and redirects to `/troupe-setup` (which reads the repo and proposes
+  a whole team) instead of trying to add one role at a time. Also
+  replaced the role picker's multiple-choice prompt — which listed
+  all nine catalog roles and exceeded the four-option limit on
+  choice-style questions — with a plain open-ended question.
+
 ## 0.5.2 (2026-07-09)
 
 - README rewritten from scratch for readers evaluating the project,
