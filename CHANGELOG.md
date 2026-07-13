@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2 (2026-07-09)
+
+- README rewritten from scratch for readers evaluating the project,
+  not maintainers of it — matches the current CLI (the removed
+  scan-at-init design is gone from the docs) and leads with a plain
+  "put them to work" example addressed to the team.
+- Added a standalone Install section up top (`uvx troupe init`, with
+  `uv tool install` / `pip install` as the persistent-install
+  alternative).
+- Cleaned up `troupe init`'s terminal output: a one-line summary plus
+  a numbered "Next steps" block instead of a flat run of sentences,
+  with wording that doesn't assume the reader knows an older version.
+
 ## 0.5.1 (2026-07-09)
 
 - `/troupe-setup` proposals now show a role emoji per cast member,
