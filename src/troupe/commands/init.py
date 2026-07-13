@@ -64,7 +64,4 @@ def _echo_result(result: ScaffoldResult) -> None:
             "Claude Code if you want to revisit it."
         )
     else:
-        typer.echo(
-            "  2. Open Claude Code and run /troupe-setup to cast your team, grounded in "
-            "a real read of this repo."
-        )
+        typer.echo("  2. Open Claude Code and run /troupe-setup to cast your team.")
