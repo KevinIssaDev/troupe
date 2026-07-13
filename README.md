@@ -8,6 +8,14 @@ Governance is enforced by real Claude Code hooks, not instructions an agent can 
 
 > ⚠️ **Alpha software.** Interfaces may change between releases. Reeve (the autonomous issue watch) spends real money when you pass `--execute` — read [its safety model](#reeve--the-autonomous-issue-watch) first.
 
+## Install
+
+```bash
+uvx troupe init
+```
+
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Prefer a persistent install? `uv tool install troupe` or `pip install troupe`, then run `troupe init`.
+
 ## Getting started
 
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/) (or pip), Claude Code. The `gh` CLI only if you use Reeve.
