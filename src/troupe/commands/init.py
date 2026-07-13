@@ -45,21 +45,26 @@ def init(path: PathArg = Path()) -> None:
 
 
 def _echo_result(result: ScaffoldResult) -> None:
-    typer.echo(f"Created {len(result.created)} file(s), left {len(result.skipped)} untouched.")
+    typer.echo(
+        f"Scaffolded troupe: {len(result.created)} file(s) created, "
+        f"{len(result.skipped)} already there."
+    )
     for updated in result.updated:
         rel = updated.relative_to(result.root)
         note = " (troupe hooks wired in)" if updated.name == "settings.json" else ""
         typer.echo(f"Updated {rel}{note}.")
     troupe_dir = result.root / ".troupe"
     typer.echo(f"Team state: {troupe_dir}")
-    typer.echo("Next: commit .troupe/ and .claude/ so the team travels with the repo.")
+    typer.echo("")
+    typer.echo("Next steps:")
+    typer.echo('  1. git add .troupe .claude && git commit -m "scaffold the troupe"')
     if result.cast:
         typer.echo(
-            "Cast already assembled — see .troupe/team.md. Run /troupe-setup in Claude "
-            "Code if you want to revisit it."
+            "  2. Cast already assembled — see .troupe/team.md. Run /troupe-setup in "
+            "Claude Code if you want to revisit it."
         )
     else:
         typer.echo(
-            "No cast yet — that's expected. Open Claude Code and run /troupe-setup to cast "
-            "your team, grounded in a real read of this repo."
+            "  2. Open Claude Code and run /troupe-setup to cast your team, grounded in "
+            "a real read of this repo."
         )

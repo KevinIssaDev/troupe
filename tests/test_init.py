@@ -92,10 +92,10 @@ def test_hooks_and_settings_wired_with_zero_cast(tmp_path: Path) -> None:
 
 def test_init_guidance_points_to_troupe_setup(tmp_path: Path) -> None:
     output = run_init(tmp_path)
-    assert "Next: commit .troupe/ and .claude/ so the team travels with the repo." in output
+    assert 'git add .troupe .claude && git commit -m "scaffold the troupe"' in output
     assert (
-        "No cast yet — that's expected. Open Claude Code and run /troupe-setup to cast "
-        "your team, grounded in a real read of this repo." in output
+        "Open Claude Code and run /troupe-setup to cast your team, grounded in "
+        "a real read of this repo." in output
     )
 
 
@@ -132,7 +132,7 @@ def test_reinit_after_cast_reports_existing_cast_not_no_cast_yet(tmp_path: Path)
     assert add_result.exit_code == 0, add_result.output
 
     output = run_init(tmp_path)
-    assert "No cast yet" not in output
+    assert "Open Claude Code and run /troupe-setup to cast your team" not in output
     assert "Cast already assembled" in output
 
     state = json.loads((tmp_path / ".troupe/casting-state.json").read_text(encoding="utf-8"))
@@ -170,4 +170,4 @@ def test_reinit_is_idempotent(tmp_path: Path) -> None:
 
     assert before == after
     assert "Chose sqlite" in decisions.read_text(encoding="utf-8")
-    assert "Created 0 file(s)" in output
+    assert "0 file(s) created" in output
